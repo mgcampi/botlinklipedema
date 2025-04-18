@@ -1,12 +1,27 @@
-
 [phases.setup]
-nixPkgs = ["google-chrome", "chromium", "nss", "atk", "atkmm", "cups", "libxcomposite", "libxrandr", "gtk3", "libdrm", "pango", "gdk-pixbuf", "glib", "cairo", "nss", "alsa-lib", "libxdamage", "libxfixes", "libx11", "libxcb", "libxext", "expat", "libxss", "libxtst"]
-
-[phases.install]
-cmds = ["npm install"]
-
-[phases.build]
-cmds = []
-
-[start]
-cmd = "node index.js"
+nixPkgs = [
+  "glib",
+  "nss",
+  "atk",
+  "cups",
+  "libxshmfence",
+  "libdrm",
+  "libxrandr",
+  "libxdamage",
+  "libxcomposite",
+  "libxkbcommon",
+  "pango",
+  "cairo",
+  "alsaLib",
+  "libXcursor",
+  "libXext",
+  "libXi",
+  "libXtst",
+  "libXScrnSaver",
+  "libx11",
+  "libxcb",
+  "libxfixes",
+  "expat",
+  "fontconfig",
+  "gtk3"
+]
