@@ -34,73 +34,68 @@ export async function registrarNoWebinar(
           if (el) { el.scrollIntoView({ block: 'center' }); el.click(); }
           return !!el;
         });
-      } catch (_) { /* frame cross‑origin ou detached — ignora */ }
+      } catch (_) {}
       if (clicked) break;
     }
     if (!clicked) throw new Error('Botão REGISTRO não encontrado');
     console.log('✅ Botão REGISTRO clicado');
 
-    /* ---------- helper robusto (ignora frames detached) ---------- */
-    const findInFrames = async selectors => {
-      for (const f of page.frames()) {
-        try {
-          for (const sel of selectors) {
-            const h = await f.$(sel);
-            if (h) return { frame: f, handle: h };
-          }
-        } catch (_) { /* frame recém‑destruído, segue */ }
+    /* ---------- 2) Aguarda inputs (até 30 s) ---------- */
+    async function waitInputs() {
+      const start = Date.now();
+      while (Date.now() - start < 30000) {
+        for (const f of page.frames()) {
+          try {
+            const inputs = await f.$$('input');
+            if (inputs.length >= 2) return { frame: f, inputs };
+          } catch (_) {}
+        }
+        await page.waitForTimeout(500);
       }
-      return null;
-    };
+      throw new Error('Campos de nome ou email não encontrados');
+    }
 
-    /* ---------- 2) Preenche nome e e‑mail ---------- */
-    const nomeSel  = [
-      'input[name="name"]',
-      'input[name*="first"]',
-      'input[placeholder*="nome" i]',
-      'input[id*="name" i]'
-    ];
-    const emailSel = [
-      'input[name="email"]',
-      'input[type="email"]',
-      'input[placeholder*="mail" i]',
-      'input[id*="email" i]'
-    ];
-
-    const n = await findInFrames(nomeSel);
-    const e = await findInFrames(emailSel);
-    if (!n || !e) throw new Error('Campos de nome ou email não encontrados');
-
-    await n.handle.type(nome,  { delay: 25 });
-    await e.handle.type(email, { delay: 25 });
+    const { inputs } = await waitInputs();
+    await inputs[0].type(nome,  { delay: 25 });
+    await inputs[1].type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    /* pequena pausa pro WebinarJam reconstruir se precisar */
+    /* pequena pausa para estabilidade */
     await page.waitForTimeout(1000);
 
-    /* ---------- 3) Envia ---------- */
-    const enviar = await findInFrames([
-      'button[type="submit"]',
-      'input[type="submit"]',
-      'button.js-submit'
-    ]);
-    if (enviar) await enviar.handle.click();
-    else console.warn('⚠️ Botão de enviar não encontrado (pode ser auto‑submit).');
-    console.log('🚀 Formulário enviado');
+    /* ---------- 3) Clica no submit (se existir) ---------- */
+    let submitted = false;
+    for (const f of page.frames()) {
+      try {
+        submitted = await f.evaluate(() => {
+          const btn = document.querySelector(
+            'button[type="submit"], input[type="submit"], button.js-submit'
+          );
+          if (btn) { btn.click(); return true; }
+          return false;
+        });
+      } catch (_) {}
+      if (submitted) break;
+    }
+    console.log('🚀 Formulário enviado (ou auto‑submit)');
 
     /* ---------- 4) Captura link final ---------- */
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
-    const linkH = await findInFrames([
-      'a[href*="go-live"]',
-      'a[href*="/live/"]',
-      'a[href*="event.webinarjam.com/t/"]',
-      'a:contains("Join")',
-      'a:contains("Entrar")',
-      'a:contains("Acessar")'
-    ]);
-    const liveLink = linkH
-      ? await linkH.handle.evaluate(el => el.href)
-      : page.url();
+    let liveLink = page.url();   // fallback
+
+    for (const f of page.frames()) {
+      try {
+        const link = await f.evaluate(() => {
+          const a = [...document.querySelectorAll('a')]
+            .find(el =>
+              /go-live|\/live\/|event\.webinarjam\.com\/t\//i.test(el.href) ||
+              /Join|Entrar|Acessar/i.test(el.textContent)
+            );
+          return a ? a.href : null;
+        });
+        if (link) { liveLink = link; break; }
+      } catch (_) {}
+    }
 
     console.log('🔗 Link capturado:', liveLink);
     return liveLink;
@@ -110,7 +105,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* Teste rápido (opcional): node register.js */
+/* Teste stand‑alone: node register.js */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
