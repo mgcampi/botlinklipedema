@@ -46,23 +46,25 @@ app.get("/webinarjam", async (req, res) => {
     console.log("⏳ Aguardando 15 segundos pro modal aparecer...");
     await new Promise(resolve => setTimeout(resolve, 15000));
 
-    console.log("🔍 Buscando campos do formulário...");
+    console.log("🔍 Esperando inputs no DOM...");
 
-    await page.waitForSelector('input[placeholder*="primeiro nome"]', { timeout: 15000 });
-    await page.waitForSelector('input[placeholder*="endereço de e-mail"]', { timeout: 10000 });
+    await page.waitForFunction(() => {
+      return document.querySelectorAll('input').length >= 2;
+    }, { timeout: 20000 });
 
-    console.log("📝 Preenchendo formulário...");
+    console.log("✅ Inputs detectados. Preenchendo nome e email...");
 
-    await page.type('input[placeholder*="primeiro nome"]', nome);
-    await page.type('input[placeholder*="endereço de e-mail"]', email);
+    const inputs = await page.$$('input');
+    await inputs[0].type(nome);
+    await inputs[1].type(email);
 
-    // Remove "disabled" do botão (por garantia) e clica
+    // Habilita o botão, se ainda estiver desativado
     await page.evaluate(() => {
       const btn = document.querySelector("#register_btn");
       if (btn) btn.removeAttribute("disabled");
     });
 
-    console.log("🚀 Clicando em INSCREVA-SE JÁ...");
+    console.log("🚀 Clicando no botão INSCREVA-SE JÁ...");
     await page.click("#register_btn");
 
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
@@ -70,7 +72,7 @@ app.get("/webinarjam", async (req, res) => {
 
     await browser.close();
 
-    console.log("🎯 Inscrição concluída!");
+    console.log("🎯 Inscrição concluída com sucesso!");
     return res.json({ sucesso: true, url: finalUrl });
 
   } catch (erro) {
