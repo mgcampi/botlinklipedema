@@ -3,8 +3,8 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
-/* Helper genérico de pausa ----------------------------------------------- */
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+/* Helper de pausa --------------------------------------------------------- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
   nome  = 'Automação Teste',
@@ -43,7 +43,7 @@ export async function registrarNoWebinar(
     if (!clicked) throw new Error('Botão REGISTRO não encontrado');
     console.log('✅ Botão REGISTRO clicado');
 
-    /* ---------- 2) Aguarda inputs (até 30 s) ---------- */
+    /* ---------- 2) Espera inputs (até 30 s) ---------- */
     async function waitInputs() {
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
@@ -63,42 +63,40 @@ export async function registrarNoWebinar(
     await inputs[1].type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    await sleep(1000);   // pausa para iframe estabilizar
+    await sleep(1000);   // estabiliza
 
     /* ---------- 3) Envia ---------- */
-    let submitted = false;
     for (const f of page.frames()) {
       try {
-        submitted = await f.evaluate(() => {
+        const ok = await f.evaluate(() => {
           const btn = document.querySelector(
             'button[type="submit"], input[type="submit"], button.js-submit'
           );
           if (btn) { btn.click(); return true; }
           return false;
         });
+        if (ok) break;
       } catch (_) {}
-      if (submitted) break;
     }
-    console.log('🚀 Formulário enviado (ou auto‑submit)');
+    console.log('🚀 Formulário enviado');
 
-    /* ---------- 4) Captura link final ---------- */
+    /* ---------- 4) Aguarda página de confirmação ---------- */
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
-    let liveLink = page.url();   // fallback
+
+    /* ---------- 5) Captura link js_live_link_ ---------- */
+    let liveLink = null;
 
     for (const f of page.frames()) {
       try {
-        const link = await f.evaluate(() => {
-          const a = [...document.querySelectorAll('a')]
-            .find(el =>
-              /go-live|\/live\/|event\.webinarjam\.com\/t\//i.test(el.href) ||
-              /Join|Entrar|Acessar/i.test(el.textContent)
-            );
+        const href = await f.evaluate(() => {
+          const a = document.querySelector('a[id^="js_live_link_"]');
           return a ? a.href : null;
         });
-        if (link) { liveLink = link; break; }
+        if (href) { liveLink = href; break; }
       } catch (_) {}
     }
 
+    if (!liveLink) throw new Error('Link js_live_link_ não encontrado');
     console.log('🔗 Link capturado:', liveLink);
     return liveLink;
 
