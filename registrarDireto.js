@@ -1,4 +1,3 @@
-// registrarDireto.js
 import axios from 'axios';
 
 /**
@@ -11,15 +10,15 @@ export async function registrarDireto(nome, email) {
   // 1) Baixa o HTML da página de registro
   const { data: html } = await axios.get(REG_URL, { timeout: 30000 });
 
-  // 2) Extrai CSRF token do <meta>
-  const csrfMatch = html.match(
-    /<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i
-  );
-  if (!csrfMatch) throw new Error('CSRF token não encontrado');
-  const csrfToken = csrfMatch[1];
+  // 2) Extrai CSRF token do <meta> (suporta atributos em qualquer ordem)
+  const metaRegex = /<meta[^>]*?(?:name=["']csrf-token["'][^>]*?content=["']([^"']+)["']|content=["']([^"']+)["'][^>]*?name=["']csrf-token["'])[^>]*?>/i;
+  const metaMatch = html.match(metaRegex);
+  const csrfToken = metaMatch ? (metaMatch[1] || metaMatch[2]) : null;
+  if (!csrfToken) throw new Error('CSRF token não encontrado');
 
   // 3) Extrai o objeto config injetado via JavaScript
-  const cfgMatch = html.match(/var\s+config\s*=\s*(\{[\s\S]*?\});/i);
+  const cfgRegex = /var\s+config\s*=\s*(\{[\s\S]*?\});/i;
+  const cfgMatch = html.match(cfgRegex);
   if (!cfgMatch) throw new Error('Objeto config não encontrado');
   const cfg = JSON.parse(cfgMatch[1]);
   const { hash, webinarId, tw } = cfg;
