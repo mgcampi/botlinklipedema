@@ -26,52 +26,25 @@ export async function registrarNoWebinar(
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
 
-    /* ---------- 1) Clica no botão REGISTRO ---------- */
-    async function clickRegistro() {
-      const btnInfo = await page.waitForFunction(() => {
-        const hasBtn = doc =>
-          [...doc.querySelectorAll('button, a')]
-            .find(el => /registro/i.test(el.textContent)) || null;
-
-        if (hasBtn(document)) return { type: 'main' };
-
-        for (const f of document.querySelectorAll('iframe')) {
-          try {
-            const btn = hasBtn(f.contentWindow.document);
-            if (btn) {
-              return {
-                type: 'iframe',
-                index: [...document.querySelectorAll('iframe')].indexOf(f)
-              };
-            }
-          } catch (_) {}
+    /* ---------- 1) Procura e clica no botão REGISTRO ---------- */
+    let clicked = false;
+    for (const frame of page.frames()) {
+      clicked = await frame.evaluate(() => {
+        const el = [...document.querySelectorAll('button, a')]
+          .find(e => /registro/i.test(e.textContent));
+        if (el) {
+          el.scrollIntoView({ block: 'center' });
+          el.click();
+          return true;
         }
-        return false; // continua polling
-      }, { polling: 'mutation', timeout: 20000 });
-
-      let btnHandle;
-      if (btnInfo.type === 'main') {
-        btnHandle = await page.evaluateHandle(() =>
-          [...document.querySelectorAll('button, a')]
-            .find(el => /registro/i.test(el.textContent))
-        );
-      } else {
-        const targetFrame = page.frames()[btnInfo.index + 1];
-        btnHandle = await targetFrame.evaluateHandle(() =>
-          [...document.querySelectorAll('button, a')]
-            .find(el => /registro/i.test(el.textContent))
-        );
-      }
-      await btnHandle.evaluate(el => {
-        el.scrollIntoView({ block: 'center' });
-        el.click();
-      });
-      console.log('✅ Botão REGISTRO clicado');
+        return false;
+      }).catch(() => false);
+      if (clicked) break;
     }
+    if (!clicked) throw new Error('Botão REGISTRO não encontrado');
+    console.log('✅ Botão REGISTRO clicado');
 
-    await clickRegistro();
-
-    /* ---------- 2) Preenche nome e e‑mail ---------- */
+    /* ---------- 2) Ajuda para buscar elementos em qualquer frame ---------- */
     const findInFrames = async selectors => {
       for (const f of page.frames()) {
         for (const sel of selectors) {
@@ -82,6 +55,7 @@ export async function registrarNoWebinar(
       return null;
     };
 
+    /* ---------- 3) Preenche nome e e‑mail ---------- */
     const nomeSel  = [
       'input[name="name"]',
       'input[name*="first"]',
@@ -97,13 +71,13 @@ export async function registrarNoWebinar(
 
     const n = await findInFrames(nomeSel);
     const e = await findInFrames(emailSel);
-    if (!n || !e) throw new Error('⚠️ Campos de nome ou email não encontrados');
+    if (!n || !e) throw new Error('Campos de nome ou email não encontrados');
 
     await n.handle.type(nome,  { delay: 25 });
     await e.handle.type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    /* ---------- 3) Envia ---------- */
+    /* ---------- 4) Clica no botão de enviar ---------- */
     const enviar = await findInFrames([
       'button[type="submit"]',
       'input[type="submit"]',
@@ -113,7 +87,7 @@ export async function registrarNoWebinar(
     else console.warn('⚠️ Botão de enviar não encontrado (pode ser auto‑submit).');
     console.log('🚀 Formulário enviado');
 
-    /* ---------- 4) Captura link final ---------- */
+    /* ---------- 5) Captura link final ---------- */
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
     const linkH = await findInFrames([
       'a[href*="go-live"]',
@@ -133,9 +107,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* Teste rápido: node register.js */
+/* Teste rápido local */
 if (import.meta.url === `file://${process.argv[1]}`) {
-  registrarNoWebinar().then(link => {
-    console.log('Resultado:', link);
-  }).catch(console.error);
+  registrarNoWebinar().then(console.log).catch(console.error);
 }
