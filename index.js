@@ -1,5 +1,8 @@
 import express from "express";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -58,7 +61,6 @@ app.get("/webinarjam", async (req, res) => {
     await inputs[0].type(nome);
     await inputs[1].type(email);
 
-    // Habilita o botão, se ainda estiver desativado
     await page.evaluate(() => {
       const btn = document.querySelector("#register_btn");
       if (btn) btn.removeAttribute("disabled");
