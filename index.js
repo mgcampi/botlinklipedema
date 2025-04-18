@@ -25,7 +25,7 @@ app.get("/webinarjam", async (req, res) => {
     console.log("🚀 Iniciando inscrição");
 
     browser = await puppeteer.launch({
-      headless: "new", // para compatibilidade com novas versões do Puppeteer
+      headless: "new",
       args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
@@ -39,27 +39,30 @@ app.get("/webinarjam", async (req, res) => {
     console.log("🌐 Página carregada. Clicando no primeiro botão visível...");
 
     await page.waitForSelector("button", { visible: true, timeout: 15000 });
-
     const botoes = await page.$$("button");
+
     if (botoes.length === 0) throw new Error("❌ Nenhum botão encontrado na página.");
     
     await botoes[0].click();
     console.log("✅ Clicou no primeiro botão da página");
 
-    // Aguarda o modal abrir (sem usar waitForTimeout)
-    console.log("⏳ Aguardando modal (10s)...");
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    // Aguarda até que o campo de nome apareça — dando tempo suficiente pro DOM montar
+    console.log("⏳ Aguardando o campo de nome aparecer...");
+    await page.waitForFunction(() => {
+      return !!document.querySelector('input[placeholder="Insira o primeiro nome..."]');
+    }, { timeout: 20000 });
 
-    // Espera os campos aparecerem
-    await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true, timeout: 10000 });
-    await page.waitForSelector('input[placeholder="Insira o endereço de e-mail..."]', { visible: true, timeout: 10000 });
+    console.log("✅ Campo de nome detectado");
 
-    console.log("✅ Campos visíveis. Preenchendo...");
+    // Agora aguarda os campos visivelmente carregados
+    await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true });
+    await page.waitForSelector('input[placeholder="Insira o endereço de e-mail..."]', { visible: true });
 
     await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
     await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
 
-    // Espera o botão ficar habilitado
+    console.log("✍️ Nome e email preenchidos");
+
     await page.waitForFunction(() => {
       const btn = document.querySelector("#register_btn");
       return btn && !btn.disabled;
