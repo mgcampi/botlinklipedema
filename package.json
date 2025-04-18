@@ -1,8 +1,17 @@
 {
+  "name": "webinarjam-bot",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node index.js",
+    "postinstall": "echo 'Dependências instaladas com sucesso!'"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "puppeteer": "^22.8.2",
-    "puppeteer-extra": "^3.3.6",  // Versão correta
+    "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
