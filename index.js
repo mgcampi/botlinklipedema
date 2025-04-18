@@ -38,34 +38,33 @@ app.get("/webinarjam", async (req, res) => {
 
     console.log("🌐 Página carregada. Aguardando botão REGISTRO...");
 
-    const registroBtn = await page.$("button.register-button");
-    if (registroBtn) {
-      await registroBtn.click();
-      console.log("✅ Clicou no botão REGISTRO");
-    } else {
-      throw new Error("Botão REGISTRO não encontrado.");
-    }
+    // Clica no botão REGISTRO
+    await page.waitForSelector("button.register-button", { visible: true });
+    await page.click("button.register-button");
+    console.log("✅ Clicou no botão REGISTRO");
 
-    console.log("⏳ Aguardando modal abrir (10s)...");
-    await page.waitForTimeout(10000);
-
-    await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true, timeout: 10000 });
-    await page.waitForSelector('input[placeholder="Insira o endereço de e-mail..."]', { visible: true, timeout: 10000 });
-
+    // Aguarda o modal abrir
+    console.log("⏳ Aguardando modal abrir...");
+    await page.waitForSelector("input[name='name']", { visible: true, timeout: 10000 });
+    await page.waitForSelector("input[name='email']", { visible: true, timeout: 10000 });
     console.log("✅ Modal visível. Preenchendo dados...");
 
-    await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
-    await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
+    // Preenche nome e email
+    await page.type("input[name='name']", nome, { delay: 50 });
+    await page.type("input[name='email']", email, { delay: 50 });
 
+    // Aguarda botão de inscrição habilitar
     await page.waitForFunction(() => {
-      const btn = document.querySelector("#register_btn");
+      const btn = document.querySelector("button.register-button");
       return btn && !btn.disabled;
     }, { timeout: 10000 });
 
     console.log("✅ Botão de inscrição habilitado. Enviando...");
 
-    await page.click("#register_btn");
+    // Clica no botão de inscrição
+    await page.click("button.register-button");
 
+    // Aguarda redirecionamento
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
 
     const finalUrl = page.url();
