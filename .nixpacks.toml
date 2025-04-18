@@ -1,27 +1,11 @@
+[build]
+builder = "heroku/buildpacks:20"
+
+[start]
+cmd = "node index.js"
+
+[variables]
+PORT = "8080"
+
 [phases.setup]
-nixPkgs = [
-  "glib",
-  "nss",
-  "atk",
-  "cups",
-  "libxshmfence",
-  "libdrm",
-  "libxrandr",
-  "libxdamage",
-  "libxcomposite",
-  "libxkbcommon",
-  "pango",
-  "cairo",
-  "alsaLib",
-  "libXcursor",
-  "libXext",
-  "libXi",
-  "libXtst",
-  "libXScrnSaver",
-  "libx11",
-  "libxcb",
-  "libxfixes",
-  "expat",
-  "fontconfig",
-  "gtk3"
-]
+nixPkgs = ["nodejs", "chromium", "nss", "atk", "cups", "libx11", "libxcomposite", "libxdamage", "libxrandr", "libxss", "libxtst", "mesa", "pango", "libdrm", "glib", "gtk3"]
