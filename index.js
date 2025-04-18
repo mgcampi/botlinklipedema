@@ -1,10 +1,10 @@
+
 const express = require('express');
 const puppeteer = require('puppeteer');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Healthcheck
 app.get('/ping', (_, res) => res.send('pong'));
 
 app.get('/webinarjam', async (req, res) => {
