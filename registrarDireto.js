@@ -1,84 +1,74 @@
-// register.js
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-puppeteer.use(StealthPlugin());
+import axios from 'axios';
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+/**
+ * Realiza a inscrição no WebinarJam via XHR direto,
+ * extraindo token CSRF do cookie e config do HTML via regex.
+ */
+export async function registrarDireto(nome, email) {
+  const REG_URL = 'https://event.webinarjam.com/register/2/116pqiy';
 
-export async function registrarNoWebinar(nome = 'Automação Teste', email = `teste${Date.now()}@mail.com`) {
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
+  // 1) GET inicial para pegar cookie de CSRF e HTML com config
+  const getRes = await axios.get(REG_URL, {
+    timeout: 30000,
+    validateStatus: () => true,
+    // permite obter cookies
+    withCredentials: true
   });
-  try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.goto('https://event.webinarjam.com/register/2/116pqiy', { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // 1) clica em REGISTRO
-    for (const f of page.frames()) {
-      const clicked = await f.evaluate(() => {
-        const el = Array.from(document.querySelectorAll('button,a'))
-          .find(e => /registro/i.test(e.textContent));
-        if (el) { el.scrollIntoView(); el.click(); return true; }
-        return false;
-      }).catch(() => false);
-      if (clicked) break;
+  // 2) Extrai token CSRF do cookie 'XSRF-TOKEN'
+  const setCookie = getRes.headers['set-cookie'];
+  if (!setCookie) throw new Error('Cookie XSRF-TOKEN não encontrado');
+  const xsrfStr = setCookie.find(c => c.includes('XSRF-TOKEN='));
+  if (!xsrfStr) throw new Error('XSRF-TOKEN não encontrado');
+  const csrfToken = xsrfStr.split('XSRF-TOKEN=')[1].split(';')[0];
+
+  // 3) Extrai o objeto config (var config = {...} ou window.config = {...})
+  const html = getRes.data;
+  const cfgRegex = /(?:var\s+config|window\.config)\s*=\s*(\{[\s\S]*?\})(?=;)/i;
+  const cfgMatch = html.match(cfgRegex);
+  if (!cfgMatch) throw new Error('Objeto config não encontrado');
+  const cfg = JSON.parse(cfgMatch[1]);
+  const { hash, webinarId, tw } = cfg;
+
+  // 4) Monta payload idêntico ao XHR original
+  const payload = {
+    first_name: nome,
+    email,
+    phone: '',
+    country: '',
+    customQuestions: {},
+    tags: [],
+    hash,
+    webinar_id: webinarId,
+    timezone: '-03:00',
+    tw
+  };
+
+  // 5) Envia POST para registrar e obtém resposta
+  const postRes = await axios.post(
+    'https://event.webinarjam.com/webinar/webinar_registrant.php',
+    payload,
+    {
+      headers: {
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest',
+        Origin: 'https://event.webinarjam.com',
+        Referer: REG_URL,
+        Cookie: `XSRF-TOKEN=${csrfToken}`
+      },
+      timeout: 30000,
+      validateStatus: () => true
     }
+  );
+  const data = postRes.data;
 
-    // 2) preenche nome e email
-    let inputs;
-    for (let i = 0; i < 40 && !inputs; i++) {
-      for (const f of page.frames()) {
-        const ins = await f.$$('input').catch(() => []);
-        if (ins.length >= 2) { inputs = ins; break; }
-      }
-      if (!inputs) await sleep(250);
-    }
-    if (!inputs) throw new Error('Inputs não encontrados');
-    await inputs[0].type(nome, { delay: 30 });
-    await inputs[1].type(email, { delay: 30 });
-
-    // 3) envia formulário
-    for (const f of page.frames()) {
-      const sent = await f.evaluate(() => {
-        const btn = document.querySelector('#register_btn') || document.querySelector('button.js-submit') || document.querySelector('button[type="submit"],input[type="submit"]');
-        if (!btn) return false;
-        btn.removeAttribute('disabled');
-        btn.scrollIntoView();
-        btn.click();
-        return true;
-      }).catch(() => false);
-      if (sent) break;
-    }
-
-    // 4) espera o thank-you (URL ou texto)
-    await page.waitForFunction(
-      () => /thank-you/.test(location.pathname) || document.querySelector('a[id^="js_live_link_"]'),
-      { timeout: 90000 }
-    );
-
-    // 5) captura o link em qualquer frame
-    let liveLink = page.url().match(/go\/live\/\S+/) ? page.url() : null;
-    if (!liveLink) {
-      for (const f of page.frames()) {
-        liveLink = await f.evaluate(() => {
-          const a = document.querySelector('a[id^="js_live_link_"]') ||
-                    Array.from(document.querySelectorAll('a')).find(x => /\/go\/live\//.test(x.href));
-          return a ? a.href : null;
-        }).catch(() => null);
-        if (liveLink) break;
-      }
-    }
-    if (!liveLink) throw new Error('Link da sala não encontrado');
-
-    return liveLink;
-  } finally {
-    await browser.close();
+  if (!data || !data.live_room_link) {
+    throw new Error('live_room_link ausente na resposta');
   }
-}
 
-/* teste local */
-if (import.meta.url === `file://${process.argv[1]}`) {
-  registrarNoWebinar().then(console.log).catch(console.error);
+  // 6) Garante URL absoluta
+  let link = data.live_room_link;
+  if (link.startsWith('/')) link = `https://event.webinarjam.com${link}`;
+
+  return link;
 }
