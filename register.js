@@ -3,7 +3,6 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
-/* pausa utilitária -------------------------------------------------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
@@ -12,96 +11,82 @@ export async function registrarNoWebinar(
 ) {
   const browser = await puppeteer.launch({
     headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage'
-    ]
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
   });
 
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    /* 0) abre página de registro ---------------------------------------- */
-    await page.goto(
-      'https://event.webinarjam.com/register/2/116pqiy',
-      { waitUntil: 'networkidle2', timeout: 60000 }
-    );
+    /* 0) abre a tela de registro */
+    await page.goto('https://event.webinarjam.com/register/2/116pqiy',
+      { waitUntil: 'networkidle2', timeout: 60000 });
 
-    /* 1) clica no botão REGISTRO --------------------------------------- */
-    let clicked = false;
-    for (const frame of page.frames()) {
-      try {
-        clicked = await frame.evaluate(() => {
-          const el = [...document.querySelectorAll('button, a')]
-            .find(e => /registro/i.test(e.textContent));
-          if (el) { el.scrollIntoView({ block: 'center' }); el.click(); }
-          return !!el;
-        });
-      } catch (_) {}
-      if (clicked) break;
-    }
-    if (!clicked) throw new Error('Botão REGISTRO não encontrado');
-    console.log('✅ Botão REGISTRO clicado');
-
-    /* 2) espera inputs aparecerem -------------------------------------- */
-    async function waitInputs() {
-      const deadline = Date.now() + 30000;
-      while (Date.now() < deadline) {
-        for (const f of page.frames()) {
-          try {
-            const ins = await f.$$('input');
-            if (ins.length >= 2) return ins;
-          } catch (_) {}
-        }
-        await sleep(500);
-      }
-      throw new Error('Campos de nome ou email não encontrados');
-    }
-
-    const inputs = await waitInputs();
-    await inputs[0].type(nome,  { delay: 25 });
-    await inputs[1].type(email, { delay: 25 });
-    console.log('✍️  Nome e e‑mail preenchidos');
-
-    await sleep(700); // pequena pausa
-
-    /* 3) envia ---------------------------------------------------------- */
+    /* 1) clica em REGISTRO */
     for (const f of page.frames()) {
       try {
         const ok = await f.evaluate(() => {
-          const btn = document.querySelector(
-            'button[type="submit"], input[type="submit"], button.js-submit'
-          );
-          if (btn) { btn.click(); return true; }
+          const el = [...document.querySelectorAll('button,a')]
+            .find(e => /registro/i.test(e.textContent));
+          if (el) { el.scrollIntoView(); el.click(); return true; }
           return false;
         });
         if (ok) break;
       } catch (_) {}
     }
-    console.log('🚀 Formulário enviado');
+    console.log('✅ REGISTRO clicado');
 
-    /* 4) aguarda thank‑you page carregar -------------------------------- */
-    await page.waitForNavigation(
-      { waitUntil: 'networkidle2', timeout: 60000 }
-    ).catch(() => {}); // se não navegar, seguimos
+    /* 2) aguarda inputs */
+    let inputs;
+    for (let t = 0; t < 60 && !inputs; t++) {
+      for (const f of page.frames()) {
+        try {
+          const ins = await f.$$('input');
+          if (ins.length >= 2) { inputs = ins; break; }
+        } catch (_) {}
+      }
+      if (!inputs) await sleep(500);
+    }
+    if (!inputs) throw new Error('Inputs não encontrados');
+    await inputs[0].type(nome);  await inputs[1].type(email);
+    console.log('✍️ dados preenchidos');
 
-    /* 5) espera até 60 s pelo anchor js_live_link_ ---------------------- */
-    await page.waitForSelector(
-      'a[id^="js_live_link_"], a[href*="/go/live/"]',
-      { timeout: 60000 }
+    /* 3) envia */
+    for (const f of page.frames()) {
+      try {
+        const ok = await f.evaluate(() => {
+          const b = document.querySelector(
+            'button[type="submit"],input[type="submit"],button.js-submit');
+          if (b) { b.click(); return true; }
+          return false;
+        });
+        if (ok) break;
+      } catch (_) {}
+    }
+    console.log('🚀 enviado');
+
+    /* 4) espera reload do mesmo URL */
+    const start = Date.now();
+    await page.waitForFunction(
+      s => performance.now() > s && document.readyState === 'complete',
+      { timeout: 60000 }, await page.evaluate(() => performance.now())
     );
 
-    /* 6) extrai o href -------------------------------------------------- */
-    const liveLink = await page.evaluate(() => {
-      const a = document.querySelector('a[id^="js_live_link_"]')
-            || document.querySelector('a[href*="/go/live/"]');
-      return a ? a.href : null;
-    });
-
-    if (!liveLink) throw new Error('Link /go/live/ não encontrado');
-    console.log('🔗 Link capturado:', liveLink);
+    /* 5) varre todos os frames por 90 s até achar a 1ª URL /go/live/ */
+    const deadline = Date.now() + 90000;
+    let liveLink = null;
+    while (Date.now() < deadline && !liveLink) {
+      for (const f of page.frames()) {
+        try {
+          const html = await f.content();            // DOM completo
+          const m = html.match(/https:\/\/[^"' ]+\/go\/live\/[^"' ]+/i);
+          if (m) { liveLink = m[0]; break; }
+        } catch (_) {}
+      }
+      if (!liveLink) await sleep(1000);
+    }
+    if (!liveLink) throw new Error('URL /go/live/ não encontrada');
+    console.log('🔗 link:', liveLink);
     return liveLink;
 
   } finally {
@@ -109,7 +94,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* teste stand‑alone ------------------------------------------------------ */
+/* teste stand‑alone */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
