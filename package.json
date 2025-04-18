@@ -1,4 +1,3 @@
-```json
 {
   "name": "webinarjam-bot",
   "version": "2.0.0",
@@ -14,4 +13,3 @@
     "node": "20.x"
   }
 }
-```
