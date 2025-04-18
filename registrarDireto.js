@@ -1,8 +1,9 @@
+// registrarDireto.js
 import axios from 'axios';
 
 /**
  * Realiza a inscrição no WebinarJam via XHR direto,
- * extraindo token CSRF do cookie e config do HTML estático.
+ * extraindo token CSRF do cookie e config do HTML via regex.
  */
 export async function registrarDireto(nome, email) {
   const REG_URL = 'https://event.webinarjam.com/register/2/116pqiy';
@@ -10,21 +11,21 @@ export async function registrarDireto(nome, email) {
   // 1) GET inicial para pegar cookie de CSRF e HTML com config
   const getRes = await axios.get(REG_URL, {
     timeout: 30000,
-    // permita receber o header Set-Cookie
-    validateStatus: () => true
+    validateStatus: () => true,
+    withCredentials: true
   });
 
   // 2) Extrai token CSRF do cookie 'XSRF-TOKEN'
-  const setCookieHeader = getRes.headers['set-cookie'];
-  if (!setCookieHeader) throw new Error('Cookie XSRF-TOKEN não encontrado');
-  const xsrfCookie = setCookieHeader
-    .find(c => c.startsWith('XSRF-TOKEN='));
-  if (!xsrfCookie) throw new Error('XSRF-TOKEN não encontrado');
-  const csrfToken = xsrfCookie.split(';')[0].split('=')[1];
+  const setCookie = getRes.headers['set-cookie'];
+  if (!setCookie) throw new Error('Cookie XSRF-TOKEN não encontrado');
+  const xsrfStr = setCookie.find(c => c.includes('XSRF-TOKEN='));
+  if (!xsrfStr) throw new Error('XSRF-TOKEN não encontrado');
+  const csrfToken = xsrfStr.split('XSRF-TOKEN=')[1].split(';')[0];
 
-  // 3) Extrai o objeto config injetado via JavaScript no HTML
+  // 3) Extrai o objeto config (var config = {...} ou window.config = {...})
   const html = getRes.data;
-  const cfgMatch = html.match(/var\s+config\s*=\s*(\{[\s\S]*?\});/i);
+  const cfgRegex = /(?:var\s+config|window\.config)\s*=\s*(\{[\s\S]*?\})(?=;)/i;
+  const cfgMatch = html.match(cfgRegex);
   if (!cfgMatch) throw new Error('Objeto config não encontrado');
   const cfg = JSON.parse(cfgMatch[1]);
   const { hash, webinarId, tw } = cfg;
@@ -43,8 +44,8 @@ export async function registrarDireto(nome, email) {
     tw
   };
 
-  // 5) Envia POST para registrar e obtém JSON de resposta
-  const { data } = await axios.post(
+  // 5) Envia POST para registrar e obtém resposta
+  const postRes = await axios.post(
     'https://event.webinarjam.com/webinar/webinar_registrant.php',
     payload,
     {
@@ -53,13 +54,13 @@ export async function registrarDireto(nome, email) {
         'X-Requested-With': 'XMLHttpRequest',
         Origin: 'https://event.webinarjam.com',
         Referer: REG_URL,
-        // enviar cookie XSRF-TOKEN de volta
         Cookie: `XSRF-TOKEN=${csrfToken}`
       },
       timeout: 30000,
       validateStatus: () => true
     }
   );
+  const data = postRes.data;
 
   if (!data || !data.live_room_link) {
     throw new Error('live_room_link ausente na resposta');
