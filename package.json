@@ -1,7 +1,6 @@
 {
   "name": "webinarjam-autobot",
   "version": "1.0.0",
-  "description": "API que inscreve e retorna link do WebinarJam",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
