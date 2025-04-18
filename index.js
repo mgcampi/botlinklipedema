@@ -15,74 +15,66 @@ app.get("/ping", (req, res) => {
 app.get("/webinarjam", async (req, res) => {
   const { nome, email } = req.query;
 
+  console.log("🚀 Iniciando inscrição");
+
   if (!nome || !email) {
     return res.status(400).json({ erro: "Parâmetros 'nome' e 'email' são obrigatórios." });
   }
 
-  let browser;
-
   try {
-    console.log("🚀 Iniciando inscrição");
-
-    browser = await puppeteer.launch({
+    const browser = await puppeteer.launch({
       headless: "new",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
     const page = await browser.newPage();
-
-    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "domcontentloaded",
-      timeout: 60000
-    });
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", { waitUntil: "networkidle2" });
 
     console.log("🌐 Página carregada. Clicando no botão REGISTRO...");
 
-    // Clica no primeiro botão visível (registro)
-    await page.waitForSelector("button", { visible: true, timeout: 15000 });
-    const botoes = await page.$$("button");
-    if (!botoes.length) throw new Error("Nenhum botão encontrado na página.");
-    await botoes[0].click();
+    // Clica no primeiro botão da página (REGISTRO)
+    const botoes = await page.$$('button');
+    if (botoes.length > 0) {
+      await botoes[0].click();
+      console.log("✅ Clicou no botão REGISTRO");
+    } else {
+      await browser.close();
+      return res.status(500).json({ erro: "Erro ao processar inscrição.", detalhe: "Botão REGISTRO não encontrado." });
+    }
 
-    console.log("✅ Botão REGISTRO clicado. Aguardando formulário...");
+    console.log("⏳ Aguardando 15 segundos pro modal carregar...");
+    await page.waitForTimeout(15000); // espera 15s
 
-    // Espera DOM atualizar com os inputs
-    await page.waitForFunction(() => {
-      return document.querySelector('input[placeholder="Insira o primeiro nome..."]');
-    }, { timeout: 15000 });
+    console.log("🔍 Buscando campos do formulário...");
 
-    console.log("✅ Formulário carregado");
+    await page.waitForSelector('input[placeholder*="primeiro nome"]', { timeout: 15000 });
+    await page.waitForSelector('input[placeholder*="endereço de e-mail"]', { timeout: 5000 });
 
-    // Preenche dados
-    await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
-    await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
+    console.log("📝 Preenchendo formulário...");
 
-    console.log("✍️ Nome e email preenchidos");
+    await page.type('input[placeholder*="primeiro nome"]', nome);
+    await page.type('input[placeholder*="endereço de e-mail"]', email);
 
-    // Aguarda botão habilitar
-    await page.waitForFunction(() => {
+    // Remove atributo "disabled" e clica no botão
+    await page.evaluate(() => {
       const btn = document.querySelector("#register_btn");
-      return btn && !btn.disabled;
-    }, { timeout: 10000 });
+      if (btn) btn.removeAttribute("disabled");
+    });
 
-    console.log("🚀 Botão de inscrição habilitado. Clicando...");
-
+    console.log("✅ Clicando em INSCREVA-SE JÁ...");
     await page.click("#register_btn");
 
-    // Redirecionamento para URL final
+    // Aguarda redirecionamento
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
-
     const finalUrl = page.url();
+
     await browser.close();
 
+    console.log("🎯 Inscrição concluída com sucesso!");
     return res.json({ sucesso: true, url: finalUrl });
   } catch (erro) {
     console.error("❌ ERRO DETALHADO:", erro.message);
-    if (browser) await browser.close();
-    return res.status(500).json({
-      erro: "Erro ao processar inscrição.",
-      detalhe: erro.message
-    });
+    return res.status(500).json({ erro: "Erro ao processar inscrição.", detalhe: erro.message });
   }
 });
 
