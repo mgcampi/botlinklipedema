@@ -38,7 +38,7 @@ app.get("/webinarjam", async (req, res) => {
 
     console.log("🌐 Página carregada. Aguardando botão REGISTRO...");
 
-    const registroBtn = await page.$('button[aria-label="REGISTRO"]');
+    const registroBtn = await page.$("button.register-button");
     if (registroBtn) {
       await registroBtn.click();
       console.log("✅ Clicou no botão REGISTRO");
@@ -47,9 +47,8 @@ app.get("/webinarjam", async (req, res) => {
     }
 
     console.log("⏳ Aguardando modal abrir (10s)...");
-    await page.waitForTimeout(10000); // Espera fixa de 10s
+    await page.waitForTimeout(10000);
 
-    // Aguarda campos de nome e email
     await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true, timeout: 10000 });
     await page.waitForSelector('input[placeholder="Insira o endereço de e-mail..."]', { visible: true, timeout: 10000 });
 
@@ -58,7 +57,6 @@ app.get("/webinarjam", async (req, res) => {
     await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
     await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
 
-    // Aguarda botão se habilitar
     await page.waitForFunction(() => {
       const btn = document.querySelector("#register_btn");
       return btn && !btn.disabled;
