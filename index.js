@@ -25,7 +25,7 @@ app.get("/webinarjam", async (req, res) => {
     console.log("🚀 Iniciando inscrição");
 
     browser = await puppeteer.launch({
-      headless: "new",
+      headless: "new", // para compatibilidade com novas versões do Puppeteer
       args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
@@ -38,7 +38,6 @@ app.get("/webinarjam", async (req, res) => {
 
     console.log("🌐 Página carregada. Clicando no primeiro botão visível...");
 
-    // Espera botões carregarem
     await page.waitForSelector("button", { visible: true, timeout: 15000 });
 
     const botoes = await page.$$("button");
@@ -47,9 +46,9 @@ app.get("/webinarjam", async (req, res) => {
     await botoes[0].click();
     console.log("✅ Clicou no primeiro botão da página");
 
-    // Aguarda o modal abrir
+    // Aguarda o modal abrir (sem usar waitForTimeout)
     console.log("⏳ Aguardando modal (10s)...");
-    await page.waitForTimeout(10000);
+    await new Promise(resolve => setTimeout(resolve, 10000));
 
     // Espera os campos aparecerem
     await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true, timeout: 10000 });
@@ -60,7 +59,7 @@ app.get("/webinarjam", async (req, res) => {
     await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
     await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
 
-    // Aguarda botão de inscrição habilitar
+    // Espera o botão ficar habilitado
     await page.waitForFunction(() => {
       const btn = document.querySelector("#register_btn");
       return btn && !btn.disabled;
@@ -70,7 +69,6 @@ app.get("/webinarjam", async (req, res) => {
 
     await page.click("#register_btn");
 
-    // Espera redirecionar
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
 
     const finalUrl = page.url();
@@ -80,7 +78,10 @@ app.get("/webinarjam", async (req, res) => {
   } catch (erro) {
     console.error("❌ ERRO DETALHADO:", erro.message);
     if (browser) await browser.close();
-    return res.status(500).json({ erro: "Erro ao processar inscrição.", detalhe: erro.message });
+    return res.status(500).json({
+      erro: "Erro ao processar inscrição.",
+      detalhe: erro.message
+    });
   }
 });
 
