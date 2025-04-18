@@ -1,17 +1,17 @@
+// registrarDireto.js
 import axios from 'axios';
 
 /**
- * Realiza a inscrição no WebinarJam via XHR direto,
- * extraindo token CSRF do cookie e config do HTML via regex.
+ * Inscreve no WebinarJam via XHR direto,
+ * extraindo token CSRF do cookie e config dos <script> do HTML.
  */
 export async function registrarDireto(nome, email) {
   const REG_URL = 'https://event.webinarjam.com/register/2/116pqiy';
 
-  // 1) GET inicial para pegar cookie de CSRF e HTML com config
+  // 1) GET inicial para pegar cookie de CSRF e HTML com scripts
   const getRes = await axios.get(REG_URL, {
     timeout: 30000,
     validateStatus: () => true,
-    // permite obter cookies
     withCredentials: true
   });
 
@@ -22,12 +22,23 @@ export async function registrarDireto(nome, email) {
   if (!xsrfStr) throw new Error('XSRF-TOKEN não encontrado');
   const csrfToken = xsrfStr.split('XSRF-TOKEN=')[1].split(';')[0];
 
-  // 3) Extrai o objeto config (var config = {...} ou window.config = {...})
+  // 3) Varre todos os <script> em busca de config = { … }
   const html = getRes.data;
-  const cfgRegex = /(?:var\s+config|window\.config)\s*=\s*(\{[\s\S]*?\})(?=;)/i;
-  const cfgMatch = html.match(cfgRegex);
-  if (!cfgMatch) throw new Error('Objeto config não encontrado');
-  const cfg = JSON.parse(cfgMatch[1]);
+  let configJson = null;
+  const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = scriptRegex.exec(html))) {
+    const content = m[1];
+    const cfgMatch = content.match(
+      /(?:var\s+config|window\.config)\s*=\s*(\{[\s\S]*?\});/i
+    );
+    if (cfgMatch) {
+      configJson = cfgMatch[1];
+      break;
+    }
+  }
+  if (!configJson) throw new Error('Objeto config não encontrado');
+  const cfg = JSON.parse(configJson);
   const { hash, webinarId, tw } = cfg;
 
   // 4) Monta payload idêntico ao XHR original
@@ -44,7 +55,7 @@ export async function registrarDireto(nome, email) {
     tw
   };
 
-  // 5) Envia POST para registrar e obtém resposta
+  // 5) Envia POST para registrar e obtém resposta JSON
   const postRes = await axios.post(
     'https://event.webinarjam.com/webinar/webinar_registrant.php',
     payload,
