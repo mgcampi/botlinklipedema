@@ -1,4 +1,3 @@
-
 const express = require('express');
 const puppeteer = require('puppeteer');
 
@@ -11,13 +10,20 @@ app.get('/webinarjam', async (req, res) => {
   const nome = req.query.nome || 'Automação';
   const email = req.query.email || `teste${Date.now()}@email.com`;
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-
+  let browser;
   try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process'
+      ]
+    });
+
     const page = await browser.newPage();
 
     await page.goto('https://event.webinarjam.com/register/2/116pqiy', {
@@ -46,7 +52,7 @@ app.get('/webinarjam', async (req, res) => {
 
     return res.json({ success: true, link });
   } catch (err) {
-    await browser.close();
+    if (browser) await browser.close();
     return res.status(500).json({ success: false, error: err.message });
   }
 });
