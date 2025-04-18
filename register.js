@@ -1,15 +1,11 @@
-// register.js — varredura de frames até achar /go/live/
+// register.js
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-export async function registrarNoWebinar(
-  nome  = 'Automação Teste',
-  email = `teste${Date.now()}@mail.com`,
-  timeoutMs = 120000          // 2 min máximos
-) {
+export async function registrarNoWebinar(nome, email) {
   const browser = await puppeteer.launch({
     headless: 'new',
     args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
@@ -18,84 +14,55 @@ export async function registrarNoWebinar(
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-    await page.goto('https://event.webinarjam.com/register/2/116pqiy',
-      { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto('https://event.webinarjam.com/register/2/116pqiy', {
+      waitUntil: 'networkidle2',
+      timeout: 60000
+    });
 
-    /* 1) clica em REGISTRO -------------------------------------------- */
-    for (const f of page.frames()) {
-      try {
-        const ok = await f.evaluate(() => {
-          const el = Array.from(document.querySelectorAll('button,a'))
-            .find(e => /registro/i.test(e.textContent));
-          if (el) { el.scrollIntoView(); el.click(); return true; }
-          return false;
-        });
-        if (ok) break;
-      } catch (_) {}
-    }
+    // 1) clique em REGISTRO
+    const [btn] = await page.$x(
+      "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'registro')]" +
+      " | //a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'registro')]"
+    );
+    if (!btn) throw new Error('Botão REGISTRO não encontrado');
+    await btn.click();
 
-    /* 2) preenche nome e email ---------------------------------------- */
-    let campos;
-    const inDeadline = Date.now() + 20000;
-    while (Date.now() < inDeadline && !campos) {
-      for (const f of page.frames()) {
-        try {
-          const ins = await f.$$('input');
-          if (ins.length >= 2) { campos = ins; break; }
-        } catch (_) {}
-      }
-      if (!campos) await sleep(300);
-    }
-    if (!campos) throw new Error('Inputs não encontrados');
-    await campos[0].type(nome);
-    await campos[1].type(email);
+    // 2) espera inputs
+    await page.waitForSelector('input', { timeout: 20000 });
+    const inputs = await page.$$('input');
+    if (inputs.length < 2) throw new Error('Inputs não encontrados');
+    await inputs[0].type(nome,  { delay: 30 });
+    await inputs[1].type(email, { delay: 30 });
 
-    /* 3) envia --------------------------------------------------------- */
-    for (const f of page.frames()) {
-      try {
-        const ok = await f.evaluate(() => {
-          let b = document.querySelector('#register_btn');
-          if (b) { b.removeAttribute('disabled'); b.click(); return true; }
-          b = document.querySelector(
-            'button[type="submit"],input[type="submit"],button.js-submit');
-          if (b) { b.click(); return true; }
-          return false;
-        });
-        if (ok) break;
-      } catch (_) {}
-    }
+    // 3) envia
+    await page.evaluate(() => {
+      const b = document.querySelector('#register_btn') ||
+                document.querySelector('button.js-submit') ||
+                document.querySelector('button[type="submit"],input[type="submit"]');
+      if (!b) throw new Error('Botão de envio não encontrado');
+      b.removeAttribute('disabled');
+      b.click();
+    });
 
-    /* 4) varre frames até achar /go/live/ ------------------------------ */
-    const deadline = Date.now() + timeoutMs;
-    let liveLink = null;
-    while (Date.now() < deadline && !liveLink) {
-      for (const f of page.frames()) {
-        try {
-          // 4a) anchor com id js_live_link_
-          liveLink = await f.evaluate(() => {
-            const a = document.querySelector('a[id^="js_live_link_"]');
-            return a ? a.href : null;
-          });
-          if (liveLink) break;
+    // 4) espera thank-you ou link
+    await page.waitForFunction(
+      () => /thank-you/.test(location.pathname) ||
+            !!document.querySelector('a[id^="js_live_link_"]'),
+      { timeout: 90000 }
+    );
 
-          // 4b) regex no HTML inteiro
-          const html = await f.content();
-          const m = html.match(/https:\/\/[^"' ]+\/go\/live\/[^"' ]+/i);
-          if (m) { liveLink = m[0]; break; }
-        } catch (_) {}
-      }
-      if (!liveLink) await sleep(500);
-    }
+    // 5) captura link
+    let link = await page.evaluate(() => {
+      const a = document.querySelector('a[id^="js_live_link_"]') ||
+                Array.from(document.querySelectorAll('a'))
+                     .find(x => /\/go\/live\//.test(x.href));
+      return a ? a.href : null;
+    });
+    if (!link && /go\/live/.test(page.url())) link = page.url();
+    if (!link) throw new Error('Link da sala não encontrado');
 
-    if (!liveLink)
-      throw new Error('Não encontrei URL /go/live/ em até 2 min.');
-    return liveLink;
-
+    return link;
   } finally {
     await browser.close();
   }
 }
-
-/* teste local ----------------------------------------------------------- */
-if (import.meta.url === `file://${process.argv[1]}`)
-  registrarNoWebinar().then(console.log).catch(console.error);
