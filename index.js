@@ -1,53 +1,64 @@
-const express = require("express");
-const puppeteer = require("puppeteer");
+import express from "express";
+import puppeteer from "puppeteer";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.send("🚀 API do Autobot rodando");
+  res.send("API do Autobot rodando");
 });
 
 app.get("/webinarjam", async (req, res) => {
   const { nome, email } = req.query;
 
+  console.log("🚀 Iniciando inscrição");
+
   if (!nome || !email) {
     return res.status(400).json({ erro: "Nome e email são obrigatórios." });
   }
 
-  let browser;
-
   try {
-    browser = await puppeteer.launch({
+    const browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
     const page = await browser.newPage();
-    await page.goto("https://event.webinarjam.com/register/2/116pqiy", { waitUntil: 'networkidle2' });
 
-    // Espera botão registro e clica
-    await page.waitForSelector(".register-button, .register_btn", { timeout: 10000 });
-    await page.click(".register-button, .register_btn");
+    // Vai pro formulário
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
+      waitUntil: "networkidle0",
+    });
 
-    // Preenche formulário
-    await page.waitForSelector('input[type="text"]', { timeout: 10000 });
-    await page.type('input[type="text"]', nome);
-    await page.type('input[type="email"]', email);
+    // Espera o modal aparecer
+    await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', {
+      timeout: 15000,
+    });
 
-    await page.waitForSelector('button[id="register_btn"]:not([disabled])', { timeout: 10000 });
-    await page.click('button[id="register_btn"]:not([disabled])');
+    // Preenche nome
+    await page.type('input[placeholder="Insira o primeiro nome..."]', nome);
+    // Preenche email
+    await page.type('input[placeholder="Insira o endereço de e-mail..."]', email);
 
-    await page.waitForNavigation({ waitUntil: 'networkidle2' });
+    // Ativa botão
+    await page.evaluate(() => {
+      const btn = document.querySelector("#register_btn");
+      btn.removeAttribute("disabled");
+    });
 
-    const finalURL = page.url();
+    // Clica
+    await page.click("#register_btn");
 
-    res.json({ finalURL });
-  } catch (err) {
-    console.error("❌ Erro DETALHADO:", err.message);
-    res.status(500).json({ erro: "Erro ao processar inscrição." });
-  } finally {
-    if (browser) await browser.close();
+    // Espera redirecionar
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 });
+
+    const finalUrl = page.url();
+    await browser.close();
+
+    return res.json({ link: finalUrl });
+  } catch (erro) {
+    console.error("❌ ERRO DETALHADO:", erro);
+    return res.status(500).json({ erro: "Erro ao processar inscrição." });
   }
 });
 
