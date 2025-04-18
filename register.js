@@ -7,7 +7,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
   nome  = 'Automação Teste',
-  email = `teste${Date.now()}@mail.com`
+  email = `teste${Date.now()}@mail.com`,
+  timeoutMs = 30000          // ← tempo máx. para achar o link
 ) {
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -17,12 +18,12 @@ export async function registrarNoWebinar(
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
+    await page.goto(
+      'https://event.webinarjam.com/register/2/116pqiy',
+      { waitUntil: 'networkidle2', timeout: 60000 }
+    );
 
-    /* 0) abre a tela de registro */
-    await page.goto('https://event.webinarjam.com/register/2/116pqiy',
-      { waitUntil: 'networkidle2', timeout: 60000 });
-
-    /* 1) clica em REGISTRO */
+    /* 1) clica em REGISTRO ------------------------------------------------ */
     for (const f of page.frames()) {
       try {
         const ok = await f.evaluate(() => {
@@ -36,22 +37,24 @@ export async function registrarNoWebinar(
     }
     console.log('✅ REGISTRO clicado');
 
-    /* 2) aguarda inputs */
+    /* 2) preenche nome/e‑mail ------------------------------------------- */
     let inputs;
-    for (let t = 0; t < 60 && !inputs; t++) {
+    const until = Date.now() + 15000;
+    while (Date.now() < until && !inputs) {
       for (const f of page.frames()) {
         try {
           const ins = await f.$$('input');
           if (ins.length >= 2) { inputs = ins; break; }
         } catch (_) {}
       }
-      if (!inputs) await sleep(500);
+      if (!inputs) await sleep(300);
     }
     if (!inputs) throw new Error('Inputs não encontrados');
-    await inputs[0].type(nome);  await inputs[1].type(email);
+    await inputs[0].type(nome);
+    await inputs[1].type(email);
     console.log('✍️ dados preenchidos');
 
-    /* 3) envia */
+    /* 3) envia ----------------------------------------------------------- */
     for (const f of page.frames()) {
       try {
         const ok = await f.evaluate(() => {
@@ -65,27 +68,18 @@ export async function registrarNoWebinar(
     }
     console.log('🚀 enviado');
 
-    /* 4) espera reload do mesmo URL */
-    const start = Date.now();
-    await page.waitForFunction(
-      s => performance.now() > s && document.readyState === 'complete',
-      { timeout: 60000 }, await page.evaluate(() => performance.now())
-    );
-
-    /* 5) varre todos os frames por 90 s até achar a 1ª URL /go/live/ */
-    const deadline = Date.now() + 90000;
+    /* 4) observa DOM até achar /go/live/ -------------------------------- */
+    const end = Date.now() + timeoutMs;
     let liveLink = null;
-    while (Date.now() < deadline && !liveLink) {
-      for (const f of page.frames()) {
-        try {
-          const html = await f.content();            // DOM completo
-          const m = html.match(/https:\/\/[^"' ]+\/go\/live\/[^"' ]+/i);
-          if (m) { liveLink = m[0]; break; }
-        } catch (_) {}
-      }
-      if (!liveLink) await sleep(1000);
+
+    while (Date.now() < end && !liveLink) {
+      const html = await page.content();               // DOM inteiro (frame principal)
+      const m = html.match(/https:\/\/[^"' ]+\/go\/live\/[^"' ]+/i);
+      if (m) { liveLink = m[0]; break; }
+      await sleep(500);
     }
-    if (!liveLink) throw new Error('URL /go/live/ não encontrada');
+
+    if (!liveLink) throw new Error('Link /go/live/ não apareceu em tempo');
     console.log('🔗 link:', liveLink);
     return liveLink;
 
@@ -94,7 +88,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* teste stand‑alone */
+/* teste local */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
