@@ -1,4 +1,4 @@
-// register.js  – compatível com Puppeteer v4
+// register.js  – compatível com Puppeteer v4 e botão #register_btn
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
@@ -29,9 +29,9 @@ export async function registrarNoWebinar(
     for (const f of page.frames()) {
       try {
         clicked = await f.evaluate(() => {
-          const btn = Array.from(document.querySelectorAll('button,a'))
-            .find(el => /registro/i.test(el.textContent));
-          if (btn) { btn.scrollIntoView(); btn.click(); return true; }
+          const el = Array.from(document.querySelectorAll('button,a'))
+            .find(e => /registro/i.test(e.textContent));
+          if (el) { el.scrollIntoView(); el.click(); return true; }
           return false;
         });
       } catch (_) {}
@@ -39,14 +39,14 @@ export async function registrarNoWebinar(
     }
     if (!clicked) throw new Error('Botão REGISTRO não encontrado');
 
-    /* 2) ESPERA inputs aparecerem (até 20 s) ---------------------------- */
+    /* 2) ESPERA inputs aparecerem -------------------------------------- */
     let nomeInput, emailInput;
     const inDeadline = Date.now() + 20000;
     while (Date.now() < inDeadline && !(nomeInput && emailInput)) {
       for (const f of page.frames()) {
         try {
-          const inputs = await f.$$('input');
-          if (inputs.length >= 2) { [nomeInput, emailInput] = inputs; break; }
+          const ins = await f.$$('input');
+          if (ins.length >= 2) { [nomeInput, emailInput] = ins; break; }
         } catch (_) {}
       }
       if (!(nomeInput && emailInput)) await sleep(300);
@@ -61,9 +61,18 @@ export async function registrarNoWebinar(
     for (const f of page.frames()) {
       try {
         enviado = await f.evaluate(() => {
-          const sbt = document.querySelector(
-            'button[type="submit"],input[type="submit"],button.js-submit');
-          if (sbt) { sbt.click(); return true; }
+          // (a) tenta botão padrão do WebinarJam
+          let btn = document.querySelector('#register_btn');
+          if (btn) {
+            btn.removeAttribute('disabled');
+            btn.click();
+            return true;
+          }
+          // (b) fallback genérico
+          btn = document.querySelector(
+            'button[type="submit"],input[type="submit"],button.js-submit'
+          );
+          if (btn) { btn.click(); return true; }
           return false;
         });
       } catch (_) {}
@@ -71,13 +80,13 @@ export async function registrarNoWebinar(
     }
     if (!enviado) throw new Error('Botão de envio não encontrado');
 
-    /* 4) ESPERA URL virar /registration/thank-you/----------------------- */
+    /* 4) ESPERA URL virar /registration/thank-you/ ---------------------- */
     await page.waitForFunction(
       () => /\/registration\/thank-you\//.test(location.pathname),
       { timeout: 90000 }
     );
 
-    /* 5) ESPERA anchor js_live_link_ (até 90 s) ------------------------- */
+    /* 5) ESPERA anchor js_live_link_ aparecer --------------------------- */
     let link = null;
     const linkDeadline = Date.now() + 90000;
     while (Date.now() < linkDeadline && !link) {
