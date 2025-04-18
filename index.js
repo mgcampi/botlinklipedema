@@ -1,59 +1,53 @@
-const express = require('express');
-const puppeteer = require('puppeteer');
+const express = require("express");
+const puppeteer = require("puppeteer");
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 
-app.get('/ping', (_, res) => res.send('pong'));
+app.get("/", (req, res) => {
+  res.send("🚀 API do Autobot rodando");
+});
 
-app.get('/webinarjam', async (req, res) => {
-  const nome = req.query.nome || 'Automação';
-  const email = req.query.email || `teste${Date.now()}@email.com`;
+app.get("/webinarjam", async (req, res) => {
+  const { nome, email } = req.query;
+
+  if (!nome || !email) {
+    return res.status(400).json({ erro: "Nome e email são obrigatórios." });
+  }
 
   let browser;
+
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--single-process'
-      ]
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
     const page = await browser.newPage();
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", { waitUntil: 'networkidle2' });
 
-    await page.goto('https://event.webinarjam.com/register/2/116pqiy', {
-      waitUntil: 'networkidle2',
-      timeout: 30000
-    });
+    // Espera botão registro e clica
+    await page.waitForSelector(".register-button, .register_btn", { timeout: 10000 });
+    await page.click(".register-button, .register_btn");
 
-    await page.type('input[name="name"]', nome);
-    await page.type('input[name="email"]', email);
+    // Preenche formulário
+    await page.waitForSelector('input[type="text"]', { timeout: 10000 });
+    await page.type('input[type="text"]', nome);
+    await page.type('input[type="email"]', email);
 
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 })
-    ]);
+    await page.waitForSelector('button[id="register_btn"]:not([disabled])', { timeout: 10000 });
+    await page.click('button[id="register_btn"]:not([disabled])');
 
-    const link = await page.evaluate(() => {
-      const el = document.querySelector('a[href*="go/live/2"]');
-      return el ? el.href : null;
-    });
+    await page.waitForNavigation({ waitUntil: 'networkidle2' });
 
-    await browser.close();
+    const finalURL = page.url();
 
-    if (!link) {
-      return res.status(404).json({ success: false, error: "Link não encontrado" });
-    }
-
-    return res.json({ success: true, link });
+    res.json({ finalURL });
   } catch (err) {
+    console.error("❌ Erro DETALHADO:", err.message);
+    res.status(500).json({ erro: "Erro ao processar inscrição." });
+  } finally {
     if (browser) await browser.close();
-    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
