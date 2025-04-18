@@ -36,35 +36,41 @@ app.get("/webinarjam", async (req, res) => {
       timeout: 60000
     });
 
-    console.log("🌐 Página carregada. Aguardando botão REGISTRO...");
+    console.log("🌐 Página carregada. Clicando no primeiro botão visível...");
 
-    // Clica no botão REGISTRO
-    await page.waitForSelector("button.register-button", { visible: true });
-    await page.click("button.register-button");
-    console.log("✅ Clicou no botão REGISTRO");
+    // Espera botões carregarem
+    await page.waitForSelector("button", { visible: true, timeout: 15000 });
+
+    const botoes = await page.$$("button");
+    if (botoes.length === 0) throw new Error("❌ Nenhum botão encontrado na página.");
+    
+    await botoes[0].click();
+    console.log("✅ Clicou no primeiro botão da página");
 
     // Aguarda o modal abrir
-    console.log("⏳ Aguardando modal abrir...");
-    await page.waitForSelector("input[name='name']", { visible: true, timeout: 10000 });
-    await page.waitForSelector("input[name='email']", { visible: true, timeout: 10000 });
-    console.log("✅ Modal visível. Preenchendo dados...");
+    console.log("⏳ Aguardando modal (10s)...");
+    await page.waitForTimeout(10000);
 
-    // Preenche nome e email
-    await page.type("input[name='name']", nome, { delay: 50 });
-    await page.type("input[name='email']", email, { delay: 50 });
+    // Espera os campos aparecerem
+    await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true, timeout: 10000 });
+    await page.waitForSelector('input[placeholder="Insira o endereço de e-mail..."]', { visible: true, timeout: 10000 });
+
+    console.log("✅ Campos visíveis. Preenchendo...");
+
+    await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
+    await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
 
     // Aguarda botão de inscrição habilitar
     await page.waitForFunction(() => {
-      const btn = document.querySelector("button.register-button");
+      const btn = document.querySelector("#register_btn");
       return btn && !btn.disabled;
     }, { timeout: 10000 });
 
-    console.log("✅ Botão de inscrição habilitado. Enviando...");
+    console.log("🚀 Botão habilitado. Clicando pra inscrever...");
 
-    // Clica no botão de inscrição
-    await page.click("button.register-button");
+    await page.click("#register_btn");
 
-    // Aguarda redirecionamento
+    // Espera redirecionar
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
 
     const finalUrl = page.url();
