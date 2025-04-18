@@ -1,8 +1,7 @@
-# Dockerfile otimizado para Puppeteer + Railway
-
+# Dockerfile
 FROM node:18-bullseye-slim
 
-# Instala dependências de sistema para o Chromium do Puppeteer
+# Instala dependências de sistema necessárias ao Chromium
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
@@ -30,23 +29,18 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libxshmfence1 \
     libglu1 \
-    lsb-release \
     wget \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copia primeiro apenas package.json para aproveitar cache de layers
+# Copia somente package.json para cache de dependências
 COPY package.json package-lock.json* ./
-
-# Instala as dependências do Node (incluindo Puppeteer)
 RUN npm install
 
 # Copia o restante do código
 COPY . .
 
-# Exponha a porta que o Express vai usar
 EXPOSE 8080
 
-# Inicia o seu servidor
 CMD ["npm", "start"]
