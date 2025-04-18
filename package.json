@@ -1,15 +1,13 @@
 {
-  "name": "webinarjam-autobot",
+  "name": "webinarjam-bot",
   "version": "1.0.0",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "puppeteer": "^22.8.2"
-  },
-  "engines": {
-    "node": ">=18"
   }
 }
