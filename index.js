@@ -17,10 +17,10 @@ app.get('/webinarjam', async (req, res) => {
   }
   try {
     const link = await registrarNoWebinar(nome, email);
-    res.json({ sucesso: true, link });
+    return res.json({ sucesso: true, link });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ erro: e.message });
+    return res.status(500).json({ erro: e.message });
   }
 });
 
