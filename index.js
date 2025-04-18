@@ -39,12 +39,18 @@ app.get("/webinarjam", async (req, res) => {
       timeout: 60000
     });
 
-    console.log("🌐 Página carregada. Clicando no botão REGISTRO...");
+    console.log("🌐 Página carregada. Procurando botão REGISTRO...");
 
     const botoes = await page.$$('button');
     if (!botoes.length) throw new Error("❌ Nenhum botão encontrado na página.");
-    await botoes[0].click();
-    console.log("✅ Botão REGISTRO clicado");
+
+    const btnBox = await botoes[0].boundingBox();
+    if (!btnBox) throw new Error("❌ Não foi possível obter posição do botão REGISTRO.");
+
+    await page.mouse.move(btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2);
+    await page.mouse.click(btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2);
+
+    console.log("✅ Clique real simulado no botão REGISTRO");
 
     console.log("⏳ Aguardando 15 segundos pro modal aparecer...");
     await new Promise(resolve => setTimeout(resolve, 15000));
