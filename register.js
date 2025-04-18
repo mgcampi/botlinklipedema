@@ -16,8 +16,6 @@ export async function registrarNoWebinar(
     ]
   });
 
-  let liveLink = null;
-
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
@@ -26,36 +24,36 @@ export async function registrarNoWebinar(
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
 
-    /* ---------- 1) Procura e clica no botão REGISTRO ---------- */
+    /* ---------- 1) Clica no botão REGISTRO ---------- */
     let clicked = false;
     for (const frame of page.frames()) {
-      clicked = await frame.evaluate(() => {
-        const el = [...document.querySelectorAll('button, a')]
-          .find(e => /registro/i.test(e.textContent));
-        if (el) {
-          el.scrollIntoView({ block: 'center' });
-          el.click();
-          return true;
-        }
-        return false;
-      }).catch(() => false);
+      try {
+        clicked = await frame.evaluate(() => {
+          const el = [...document.querySelectorAll('button, a')]
+            .find(e => /registro/i.test(e.textContent));
+          if (el) { el.scrollIntoView({ block: 'center' }); el.click(); }
+          return !!el;
+        });
+      } catch (_) { /* frame cross‑origin ou detached — ignora */ }
       if (clicked) break;
     }
     if (!clicked) throw new Error('Botão REGISTRO não encontrado');
     console.log('✅ Botão REGISTRO clicado');
 
-    /* ---------- 2) Ajuda para buscar elementos em qualquer frame ---------- */
+    /* ---------- helper robusto (ignora frames detached) ---------- */
     const findInFrames = async selectors => {
       for (const f of page.frames()) {
-        for (const sel of selectors) {
-          const h = await f.$(sel);
-          if (h) return { frame: f, handle: h };
-        }
+        try {
+          for (const sel of selectors) {
+            const h = await f.$(sel);
+            if (h) return { frame: f, handle: h };
+          }
+        } catch (_) { /* frame recém‑destruído, segue */ }
       }
       return null;
     };
 
-    /* ---------- 3) Preenche nome e e‑mail ---------- */
+    /* ---------- 2) Preenche nome e e‑mail ---------- */
     const nomeSel  = [
       'input[name="name"]',
       'input[name*="first"]',
@@ -77,7 +75,10 @@ export async function registrarNoWebinar(
     await e.handle.type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    /* ---------- 4) Clica no botão de enviar ---------- */
+    /* pequena pausa pro WebinarJam reconstruir se precisar */
+    await page.waitForTimeout(1000);
+
+    /* ---------- 3) Envia ---------- */
     const enviar = await findInFrames([
       'button[type="submit"]',
       'input[type="submit"]',
@@ -87,7 +88,7 @@ export async function registrarNoWebinar(
     else console.warn('⚠️ Botão de enviar não encontrado (pode ser auto‑submit).');
     console.log('🚀 Formulário enviado');
 
-    /* ---------- 5) Captura link final ---------- */
+    /* ---------- 4) Captura link final ---------- */
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
     const linkH = await findInFrames([
       'a[href*="go-live"]',
@@ -97,9 +98,11 @@ export async function registrarNoWebinar(
       'a:contains("Entrar")',
       'a:contains("Acessar")'
     ]);
-    liveLink = linkH ? await linkH.handle.evaluate(el => el.href) : page.url();
-    console.log('🔗 Link capturado:', liveLink);
+    const liveLink = linkH
+      ? await linkH.handle.evaluate(el => el.href)
+      : page.url();
 
+    console.log('🔗 Link capturado:', liveLink);
     return liveLink;
 
   } finally {
@@ -107,7 +110,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* Teste rápido local */
+/* Teste rápido (opcional): node register.js */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
