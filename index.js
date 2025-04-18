@@ -12,10 +12,11 @@ app.get('/webinarjam', async (req, res) => {
   const nome = req.query.nome || 'Automação';
   const email = req.query.email || `teste${Date.now()}@email.com`;
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+ const browser = await puppeteer.launch({
+  headless: 'new',
+  executablePath: '/usr/bin/google-chrome',
+  args: ['--no-sandbox', '--disable-setuid-sandbox']
+});
 
   const page = await browser.newPage();
 
