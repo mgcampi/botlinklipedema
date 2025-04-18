@@ -3,7 +3,7 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
-/* Pausa utilitária -------------------------------------------------------- */
+/* pausa utilitária -------------------------------------------------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
@@ -65,7 +65,7 @@ export async function registrarNoWebinar(
     await inputs[1].type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    await sleep(700); // estabilidade
+    await sleep(700); // pequena pausa
 
     /* 3) envia ---------------------------------------------------------- */
     for (const f of page.frames()) {
@@ -82,26 +82,22 @@ export async function registrarNoWebinar(
     }
     console.log('🚀 Formulário enviado');
 
-    /* 4) aguarda a página /registration/thank-you/ ---------------------- */
+    /* 4) aguarda thank‑you page carregar -------------------------------- */
     await page.waitForNavigation(
-      { timeout: 60000, waitUntil: 'networkidle2' }
-    ).catch(() => {}); // às vezes não navega; seguimos para checar DOM
+      { waitUntil: 'networkidle2', timeout: 60000 }
+    ).catch(() => {}); // se não navegar, seguimos
 
-    /* 5) espera o link js_live_link_ aparecer (até 30 s) --------------- */
-    await page.waitForFunction(() => {
-      const a1 = document.querySelector('a[id^="js_live_link_"]');
-      const a2 = [...document.querySelectorAll('a')]
-        .find(el => /\/go\/live\//i.test(el.href));
-      return !!(a1 || a2);
-    }, { timeout: 30000 });
+    /* 5) espera até 60 s pelo anchor js_live_link_ ---------------------- */
+    await page.waitForSelector(
+      'a[id^="js_live_link_"], a[href*="/go/live/"]',
+      { timeout: 60000 }
+    );
 
     /* 6) extrai o href -------------------------------------------------- */
     const liveLink = await page.evaluate(() => {
-      const a1 = document.querySelector('a[id^="js_live_link_"]');
-      if (a1) return a1.href;
-      const a2 = [...document.querySelectorAll('a')]
-        .find(el => /\/go\/live\//i.test(el.href));
-      return a2 ? a2.href : null;
+      const a = document.querySelector('a[id^="js_live_link_"]')
+            || document.querySelector('a[href*="/go/live/"]');
+      return a ? a.href : null;
     });
 
     if (!liveLink) throw new Error('Link /go/live/ não encontrado');
@@ -113,7 +109,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* Teste stand‑alone ------------------------------------------------------- */
+/* teste stand‑alone ------------------------------------------------------ */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
