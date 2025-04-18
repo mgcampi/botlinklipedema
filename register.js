@@ -3,79 +3,63 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
+/* pausa utilitária -------------------------------------------------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
   nome  = 'Automação Teste',
-  email = `teste${Date.now()}@mail.com`,
-  timeoutMs = 60000              // máx. 60 s para aparecer o link
+  email = `teste${Date.now()}@mail.com`
 ) {
   const browser = await puppeteer.launch({
     headless: 'new',
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
   });
 
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
+
+    /* 0) tela de registro ------------------------------------------------ */
     await page.goto(
       'https://event.webinarjam.com/register/2/116pqiy',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
 
-    /* 1) clica em REGISTRO --------------------------------------------- */
-    for (const f of page.frames()) {
-      try {
-        const ok = await f.evaluate(() => {
-          const el = [...document.querySelectorAll('button,a')]
-            .find(e => /registro/i.test(e.textContent));
-          if (el) { el.scrollIntoView(); el.click(); return true; }
-          return false;
-        });
-        if (ok) break;
-      } catch (_) {}
-    }
+    /* 1) clica em REGISTRO ---------------------------------------------- */
+    const btn = await page.$x(
+      "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'registro')] | " +
+      "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'registro')]"
+    );
+    if (!btn.length) throw new Error('Botão REGISTRO não encontrado');
+    await btn[0].click();
 
-    /* 2) preenche nome e email ----------------------------------------- */
-    let inputs;
-    const deadlineIn = Date.now() + 20000;
-    while (Date.now() < deadlineIn && !inputs) {
-      for (const f of page.frames()) {
-        try {
-          const ins = await f.$$('input');
-          if (ins.length >= 2) { inputs = ins; break; }
-        } catch (_) {}
-      }
-      if (!inputs) await sleep(300);
-    }
-    if (!inputs) throw new Error('Inputs não encontrados');
-    await inputs[0].type(nome);
-    await inputs[1].type(email);
+    /* 2) espera inputs --------------------------------------------------- */
+    await page.waitForSelector('input', { timeout: 20000 });
+    const inputs = await page.$$eval('input', els => els.map(e => e.name || e.type));
+    if (inputs.length < 2) throw new Error('Menos de 2 inputs no DOM');
+    const [nomeIn, emailIn] = await page.$$('input');
 
-    /* 3) envia ---------------------------------------------------------- */
-    for (const f of page.frames()) {
-      try {
-        const ok = await f.evaluate(() => {
-          const b = document.querySelector(
-            'button[type="submit"],input[type="submit"],button.js-submit');
-          if (b) { b.click(); return true; }
-          return false;
-        });
-        if (ok) break;
-      } catch (_) {}
-    }
+    await nomeIn.type(nome);
+    await emailIn.type(email);
 
-    /* 4) espera o anchor js_live_link_ aparecer ------------------------ */
-    const linkHandle = await page.waitForFunction(() => {
-      const a = document.querySelector('a[id^="js_live_link_"]') ||
-                [...document.querySelectorAll('a')]
-                  .find(el => /\/go\/live\//i.test(el.href));
-      return a ? a.href : null;
-    }, { polling: 'mutation', timeout: timeoutMs });
+    /* 3) envia formulário ------------------------------------------------ */
+    const sendBtn = await page.$('button[type="submit"],input[type="submit"],button.js-submit');
+    if (sendBtn) await sendBtn.click();
+    else throw new Error('Botão de envio não encontrado');
 
-    const liveLink = await linkHandle.jsonValue();
+    console.log('🚀 Formulário enviado – aguardando thank‑you');
 
-    if (!liveLink) throw new Error('Link /go/live/ não encontrado');
+    /* 4) espera redirecionar p/ /registration/thank-you/… --------------- */
+    await page.waitForFunction(
+      () => /\/registration\/thank-you\//.test(location.pathname),
+      { timeout: 90000 }
+    );
+
+    /* 5) espera link js_live_link_ aparecer ----------------------------- */
+    await page.waitForSelector('a[id^="js_live_link_"]', { timeout: 90000 });
+    const liveLink = await page.$eval('a[id^="js_live_link_"]', a => a.href);
+
+    if (!liveLink) throw new Error('Anchor js_live_link_ sem href!');
     return liveLink;
 
   } finally {
