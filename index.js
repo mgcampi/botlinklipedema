@@ -2,7 +2,7 @@ import express from "express";
 import puppeteer from "puppeteer";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 app.get("/", (req, res) => {
   res.send("API do Autobot rodando");
@@ -32,46 +32,44 @@ app.get("/webinarjam", async (req, res) => {
     const page = await browser.newPage();
 
     await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: 60000
     });
 
-    console.log("🌐 Página carregada. Clicando no primeiro botão visível...");
+    console.log("🌐 Página carregada. Clicando no botão REGISTRO...");
 
+    // Clica no primeiro botão visível (registro)
     await page.waitForSelector("button", { visible: true, timeout: 15000 });
     const botoes = await page.$$("button");
-
-    if (botoes.length === 0) throw new Error("❌ Nenhum botão encontrado na página.");
-    
+    if (!botoes.length) throw new Error("Nenhum botão encontrado na página.");
     await botoes[0].click();
-    console.log("✅ Clicou no primeiro botão da página");
 
-    // Aguarda até que o campo de nome apareça — dando tempo suficiente pro DOM montar
-    console.log("⏳ Aguardando o campo de nome aparecer...");
+    console.log("✅ Botão REGISTRO clicado. Aguardando formulário...");
+
+    // Espera DOM atualizar com os inputs
     await page.waitForFunction(() => {
-      return !!document.querySelector('input[placeholder="Insira o primeiro nome..."]');
-    }, { timeout: 20000 });
+      return document.querySelector('input[placeholder="Insira o primeiro nome..."]');
+    }, { timeout: 15000 });
 
-    console.log("✅ Campo de nome detectado");
+    console.log("✅ Formulário carregado");
 
-    // Agora aguarda os campos visivelmente carregados
-    await page.waitForSelector('input[placeholder="Insira o primeiro nome..."]', { visible: true });
-    await page.waitForSelector('input[placeholder="Insira o endereço de e-mail..."]', { visible: true });
-
+    // Preenche dados
     await page.type('input[placeholder="Insira o primeiro nome..."]', nome, { delay: 50 });
     await page.type('input[placeholder="Insira o endereço de e-mail..."]', email, { delay: 50 });
 
     console.log("✍️ Nome e email preenchidos");
 
+    // Aguarda botão habilitar
     await page.waitForFunction(() => {
       const btn = document.querySelector("#register_btn");
       return btn && !btn.disabled;
     }, { timeout: 10000 });
 
-    console.log("🚀 Botão habilitado. Clicando pra inscrever...");
+    console.log("🚀 Botão de inscrição habilitado. Clicando...");
 
     await page.click("#register_btn");
 
+    // Redirecionamento para URL final
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
 
     const finalUrl = page.url();
