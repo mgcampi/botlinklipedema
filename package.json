@@ -1,3 +1,4 @@
+```json
 {
   "name": "webinarjam-bot",
   "version": "2.0.0",
@@ -7,11 +8,10 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "puppeteer": "^22.8.2",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer": "^22.8.2"
   },
   "engines": {
     "node": "20.x"
   }
 }
+```
