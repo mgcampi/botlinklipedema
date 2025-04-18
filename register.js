@@ -3,7 +3,7 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
-/* Helper de pausa --------------------------------------------------------- */
+/* Pausa genérica ---------------------------------------------------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
@@ -22,12 +22,14 @@ export async function registrarNoWebinar(
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
+
+    /* -------- abre página de registro ----------------------------------- */
     await page.goto(
       'https://event.webinarjam.com/register/2/116pqiy',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
 
-    /* ---------- 1) Clica no botão REGISTRO ---------- */
+    /* -------- 1) clica no botão REGISTRO -------------------------------- */
     let clicked = false;
     for (const frame of page.frames()) {
       try {
@@ -43,7 +45,7 @@ export async function registrarNoWebinar(
     if (!clicked) throw new Error('Botão REGISTRO não encontrado');
     console.log('✅ Botão REGISTRO clicado');
 
-    /* ---------- 2) Espera inputs (até 30 s) ---------- */
+    /* -------- 2) espera inputs aparecerem (até 30 s) -------------------- */
     async function waitInputs() {
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
@@ -63,9 +65,9 @@ export async function registrarNoWebinar(
     await inputs[1].type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    await sleep(1000);   // estabiliza
+    await sleep(800); /* pequena pausa pro WebinarJam estabilizar */
 
-    /* ---------- 3) Envia ---------- */
+    /* -------- 3) envia o formulário ------------------------------------- */
     for (const f of page.frames()) {
       try {
         const ok = await f.evaluate(() => {
@@ -80,10 +82,11 @@ export async function registrarNoWebinar(
     }
     console.log('🚀 Formulário enviado');
 
-    /* ---------- 4) Aguarda página de confirmação ---------- */
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+    /* -------- 4) aguarda redireção / carregamento da tela final --------- */
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
+      .catch(() => { /* às vezes não navega, só troca DOM */ });
 
-    /* ---------- 5) Captura link js_live_link_ ---------- */
+    /* -------- 5) captura o link js_live_link_* -------------------------- */
     let liveLink = null;
 
     for (const f of page.frames()) {
@@ -105,7 +108,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* Teste stand‑alone: node register.js */
+/* ------------ teste stand‑alone ----------------------------------------- */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
