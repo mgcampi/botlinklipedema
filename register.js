@@ -3,7 +3,7 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
-/* Pausa genérica ---------------------------------------------------------- */
+/* Pausa utilitária -------------------------------------------------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function registrarNoWebinar(
@@ -23,13 +23,13 @@ export async function registrarNoWebinar(
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    /* -------- abre página de registro ----------------------------------- */
+    /* 0) abre página de registro ---------------------------------------- */
     await page.goto(
       'https://event.webinarjam.com/register/2/116pqiy',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
 
-    /* -------- 1) clica no botão REGISTRO -------------------------------- */
+    /* 1) clica no botão REGISTRO --------------------------------------- */
     let clicked = false;
     for (const frame of page.frames()) {
       try {
@@ -45,14 +45,14 @@ export async function registrarNoWebinar(
     if (!clicked) throw new Error('Botão REGISTRO não encontrado');
     console.log('✅ Botão REGISTRO clicado');
 
-    /* -------- 2) espera inputs aparecerem (até 30 s) -------------------- */
+    /* 2) espera inputs aparecerem -------------------------------------- */
     async function waitInputs() {
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
         for (const f of page.frames()) {
           try {
-            const inputs = await f.$$('input');
-            if (inputs.length >= 2) return { frame: f, inputs };
+            const ins = await f.$$('input');
+            if (ins.length >= 2) return ins;
           } catch (_) {}
         }
         await sleep(500);
@@ -60,14 +60,14 @@ export async function registrarNoWebinar(
       throw new Error('Campos de nome ou email não encontrados');
     }
 
-    const { inputs } = await waitInputs();
+    const inputs = await waitInputs();
     await inputs[0].type(nome,  { delay: 25 });
     await inputs[1].type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    await sleep(800); /* pequena pausa pro WebinarJam estabilizar */
+    await sleep(700); // estabilidade
 
-    /* -------- 3) envia o formulário ------------------------------------- */
+    /* 3) envia ---------------------------------------------------------- */
     for (const f of page.frames()) {
       try {
         const ok = await f.evaluate(() => {
@@ -82,24 +82,29 @@ export async function registrarNoWebinar(
     }
     console.log('🚀 Formulário enviado');
 
-    /* -------- 4) aguarda redireção / carregamento da tela final --------- */
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
-      .catch(() => { /* às vezes não navega, só troca DOM */ });
+    /* 4) aguarda a página /registration/thank-you/ ---------------------- */
+    await page.waitForNavigation(
+      { timeout: 60000, waitUntil: 'networkidle2' }
+    ).catch(() => {}); // às vezes não navega; seguimos para checar DOM
 
-    /* -------- 5) captura o link js_live_link_* -------------------------- */
-    let liveLink = null;
+    /* 5) espera o link js_live_link_ aparecer (até 30 s) --------------- */
+    await page.waitForFunction(() => {
+      const a1 = document.querySelector('a[id^="js_live_link_"]');
+      const a2 = [...document.querySelectorAll('a')]
+        .find(el => /\/go\/live\//i.test(el.href));
+      return !!(a1 || a2);
+    }, { timeout: 30000 });
 
-    for (const f of page.frames()) {
-      try {
-        const href = await f.evaluate(() => {
-          const a = document.querySelector('a[id^="js_live_link_"]');
-          return a ? a.href : null;
-        });
-        if (href) { liveLink = href; break; }
-      } catch (_) {}
-    }
+    /* 6) extrai o href -------------------------------------------------- */
+    const liveLink = await page.evaluate(() => {
+      const a1 = document.querySelector('a[id^="js_live_link_"]');
+      if (a1) return a1.href;
+      const a2 = [...document.querySelectorAll('a')]
+        .find(el => /\/go\/live\//i.test(el.href));
+      return a2 ? a2.href : null;
+    });
 
-    if (!liveLink) throw new Error('Link js_live_link_ não encontrado');
+    if (!liveLink) throw new Error('Link /go/live/ não encontrado');
     console.log('🔗 Link capturado:', liveLink);
     return liveLink;
 
@@ -108,7 +113,7 @@ export async function registrarNoWebinar(
   }
 }
 
-/* ------------ teste stand‑alone ----------------------------------------- */
+/* Teste stand‑alone ------------------------------------------------------- */
 if (import.meta.url === `file://${process.argv[1]}`) {
   registrarNoWebinar().then(console.log).catch(console.error);
 }
