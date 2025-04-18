@@ -6,8 +6,8 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.x",
-    "axios": "^1.x",
-    "jsdom": "^22.x"
+    "express": "...",
+    "axios": "...",
+    "jsdom": "..."
   }
 }
