@@ -3,6 +3,9 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
+/* Helper genérico de pausa ----------------------------------------------- */
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function registrarNoWebinar(
   nome  = 'Automação Teste',
   email = `teste${Date.now()}@mail.com`
@@ -42,15 +45,15 @@ export async function registrarNoWebinar(
 
     /* ---------- 2) Aguarda inputs (até 30 s) ---------- */
     async function waitInputs() {
-      const start = Date.now();
-      while (Date.now() - start < 30000) {
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
         for (const f of page.frames()) {
           try {
             const inputs = await f.$$('input');
             if (inputs.length >= 2) return { frame: f, inputs };
           } catch (_) {}
         }
-        await page.waitForTimeout(500);
+        await sleep(500);
       }
       throw new Error('Campos de nome ou email não encontrados');
     }
@@ -60,10 +63,9 @@ export async function registrarNoWebinar(
     await inputs[1].type(email, { delay: 25 });
     console.log('✍️  Nome e e‑mail preenchidos');
 
-    /* pequena pausa para estabilidade */
-    await page.waitForTimeout(1000);
+    await sleep(1000);   // pausa para iframe estabilizar
 
-    /* ---------- 3) Clica no submit (se existir) ---------- */
+    /* ---------- 3) Envia ---------- */
     let submitted = false;
     for (const f of page.frames()) {
       try {
