@@ -2,27 +2,27 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 
 const app = express();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8080;
 
-app.get('/', (req, res) => {
-  res.send('🤖 API ativa! Use /webinarjam?nome=SeuNome&email=SeuEmail');
-});
+// Healthcheck
+app.get('/ping', (_, res) => res.send('pong'));
 
 app.get('/webinarjam', async (req, res) => {
   const nome = req.query.nome || 'Automação';
   const email = req.query.email || `teste${Date.now()}@email.com`;
 
   const browser = await puppeteer.launch({
-    headless: 'new',
+    headless: true,
     executablePath: '/usr/bin/google-chrome',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
-  const page = await browser.newPage();
-
   try {
+    const page = await browser.newPage();
+
     await page.goto('https://event.webinarjam.com/register/2/116pqiy', {
-      waitUntil: 'networkidle2'
+      waitUntil: 'networkidle2',
+      timeout: 30000
     });
 
     await page.type('input[name="name"]', nome);
@@ -30,7 +30,7 @@ app.get('/webinarjam', async (req, res) => {
 
     await Promise.all([
       page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2' })
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 })
     ]);
 
     const link = await page.evaluate(() => {
