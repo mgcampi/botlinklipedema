@@ -49,7 +49,7 @@ app.post("/inscrever", async (req, res) => {
     await fs.writeFile(debugFilePath, html);
     console.log(`💾 HTML salvo como ${debugFileName}`);
 
-    const configRegex = /var config = ({.*?});/s;
+    const configRegex = /var conficonst configRegex = /config\s*=\s*({.*?});/s;g = ({.*?});/s;
     const match = html.match(configRegex);
 
     if (!match || match.length < 2) {
