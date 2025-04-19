@@ -14,8 +14,6 @@ RUN npm install
 
 COPY . .
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
 EXPOSE 8080
 
-CMD ["node", "index.js"]
+CMD [ "node", "index.js" ]
