@@ -23,6 +23,7 @@ app.post("/inscrever", async (req, res) => {
     return res.status(400).json({ erro: "Nome e email são obrigatórios." });
   }
 
+  const fileName = `debug-${Date.now()}.html`; // moved to top scope
   try {
     console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
@@ -38,12 +39,10 @@ app.post("/inscrever", async (req, res) => {
 
     const html = await page.content();
 
-    const fileName = `debug-${Date.now()}.html`;
     const filePath = path.join(__dirname, "public/debug", fileName);
     fs.writeFileSync(filePath, html);
     console.log(`💾 HTML salvo como ${fileName}`);
 
-    // Extrai o var config manualmente
     const start = html.indexOf("var config = ");
     if (start === -1) throw new Error("❌ Não achei o var config");
 
@@ -51,12 +50,7 @@ app.post("/inscrever", async (req, res) => {
     const end = substring.indexOf("};");
     const jsonString = substring.slice(0, end + 1);
 
-    let config;
-    try {
-      config = JSON.parse(jsonString);
-    } catch (e) {
-      throw new Error("❌ Não consegui extrair o config JSON");
-    }
+    const config = JSON.parse(jsonString);
 
     const schedule = config.webinar?.registrationDates?.[0];
     const processUrl = config.routes?.process;
