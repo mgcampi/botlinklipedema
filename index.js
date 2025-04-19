@@ -1,5 +1,9 @@
 import express from "express";
 import axios from "axios";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+puppeteer.use(StealthPlugin());
 
 const app = express();
 app.use(express.json());
@@ -14,31 +18,29 @@ app.post("/inscrever", async (req, res) => {
   try {
     console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
-    // 1. Baixa o HTML com headers de navegador
-    const response = await axios.get("https://event.webinarjam.com/register/2/116pqiy", {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-      },
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
-    const html = response.data;
+    const page = await browser.newPage();
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
+      waitUntil: "networkidle2",
+    });
 
-    // 2. DEBUG: loga parte do HTML pra confirmar que veio certo
-    console.log("🔎 Início do HTML:", html.slice(0, 500));
+    // Executa no contexto da página e extrai o conteúdo do var config
+    const config = await page.evaluate(() => {
+      try {
+        return window.config;
+      } catch (e) {
+        return null;
+      }
+    });
 
-    // 3. Tenta extrair manualmente o JSON do var config
-    const start = html.indexOf("var config = ");
-    if (start === -1) throw new Error("Não achei o var config");
+    await browser.close();
 
-    const substring = html.slice(start + 13);
-    const end = substring.indexOf("};");
-    const jsonString = substring.slice(0, end + 1);
+    if (!config) throw new Error("❌ Não consegui extrair o config JSON");
 
-    const config = JSON.parse(jsonString);
-
-    // 4. Monta payload
     const schedule = config.webinar.registrationDates?.[0];
     const processUrl = config.routes?.process;
     const captchaKey = config.captcha?.key;
@@ -59,7 +61,6 @@ app.post("/inscrever", async (req, res) => {
       },
     };
 
-    // 5. Envia a inscrição
     const register = await axios.post(processUrl, payload, {
       headers: {
         "Content-Type": "application/json",
@@ -68,6 +69,7 @@ app.post("/inscrever", async (req, res) => {
     });
 
     const linkFinal = register.data?.redirect?.url;
+
     if (!linkFinal) throw new Error("Inscrição falhou, sem link de redirect");
 
     console.log("✅ Inscrição concluída:", linkFinal);
