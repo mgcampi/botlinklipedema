@@ -1,5 +1,8 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+puppeteer.use(StealthPlugin());
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -40,7 +43,7 @@ app.get('/webinarjam', async (req, res) => {
       ],
       ignoreHTTPSErrors: true,
       defaultViewport: null,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
     });
 
     const page = await browser.newPage();
@@ -71,11 +74,11 @@ app.get('/webinarjam', async (req, res) => {
       }
 
       if (frame) break;
-      console.log(`⏳ Tentativa ${i + 1}/${maxTries}... ainda não apareceu`);
+      console.log(`⏳ Tentativa ${i + 1}/${maxTries}... inputs ainda não renderizados`);
       await sleep(1000);
     }
 
-    if (!frame) throw new Error('❌ Nenhum frame com inputs encontrados após 20 segundos');
+    if (!frame) throw new Error('❌ Nenhum frame com inputs encontrados após 20s');
 
     console.log('✅ Inputs encontrados! Preenchendo...');
     await frame.type('input[name="name"]', nome, { delay: 60 });
@@ -91,7 +94,7 @@ app.get('/webinarjam', async (req, res) => {
     try {
       await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
-      console.warn('⌛ Timeout no redirecionamento — seguindo assim mesmo...');
+      console.warn('⌛ Timeout no redirecionamento — seguindo mesmo assim...');
     }
 
     const currentUrl = page.url();
