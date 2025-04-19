@@ -1,92 +1,108 @@
-// index.js
 import express from "express";
-import axios from "axios";
-import fs from "fs";
+import puppeteer from "puppeteer";
 
 const app = express();
-app.use(express.json());
-
 const PORT = process.env.PORT || 8080;
 
-// Função para extrair JSON da variável 'config' via regex
-function extrairConfig(html) {
-  const regex = /var config = (\{.*?\});/s;
-  const match = html.match(regex);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(match[1]);
-    } catch (err) {
-      console.error("❌ Erro ao fazer parse do JSON:", err);
-      return null;
-    }
-  }
-  return null;
-}
+app.use(express.json());
 
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
+
+  if (!nome || !email) {
+    return res.status(400).json({ erro: "Nome e e-mail são obrigatórios." });
+  }
+
   console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
+  let browser;
   try {
-    const response = await axios.get("https://event.webinarjam.com/register/116pqiy", {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-zygote",
+        "--single-process"
+      ],
     });
 
-    const html = response.data;
-    const timestamp = Date.now();
-    const fileName = `debug-${timestamp}.html`;
-    const filePath = `./public/debug/${fileName}`;
+    const page = await browser.newPage();
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
+      waitUntil: "networkidle2",
+      timeout: 60000
+    });
 
-    // Salva o HTML para debugging
-    fs.writeFileSync(filePath, html);
-    console.log(`💾 HTML salvo como ${fileName}`);
+    // Preenche o formulário
+    await page.type('input[name="name"]', nome);
+    await page.type('input[name="email"]', email);
+    await page.click('button[type="submit"]');
 
-    const config = extrairConfig(html);
+    // Aguarda o redirecionamento e coleta do link
+    let finalLink = null;
 
-    if (!config) {
-      console.error("🚨 Erro na inscrição: ❌ Não consegui extrair o config JSON");
-      return res.status(500).json({
-        erro: "Erro ao processar inscrição.",
-        debug_url: `/debug/${fileName}`,
-      });
-    }
-
-    const schedule_id = config.webinar.registrationDates[0].schedule_id;
-    const ts = config.webinar.registrationDates[0].ts;
-
-    const payload = {
-      name: nome,
-      email: email,
-      schedule_id,
-      ts,
-      hash: config.hash,
-      timezone: config.webinar.configTimezone,
-      country: config.lead.country_code || "BR",
-      captcha: config.captcha.key,
-    };
-
-    const result = await axios.post(
-      config.routes.process,
-      new URLSearchParams(payload),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+    page.on("console", (msg) => {
+      const text = msg.text();
+      if (text.includes("/go/live/")) {
+        finalLink = text.match(/https:\/\/[^ ]+/)?.[0];
       }
-    );
+    });
 
-    console.log("✅ Inscrição feita com sucesso!");
-    return res.json({ status: "ok", inscrito_em: result.request.res.responseUrl });
-  } catch (err) {
-    console.error("🚨 Erro detalhado:", err.message);
-    return res.status(500).json({ erro: "Erro ao processar inscrição." });
+    // Executa o script dentro da página
+    await page.evaluate(() => {
+      const tryFind = () => {
+        const byId = document.querySelector('a[id^="js_live_link_"]');
+        if (byId && byId.href) return byId.href;
+
+        const byHref = [...document.querySelectorAll("a")].find(a => /\/go\/live\//i.test(a.href));
+        if (byHref) return byHref.href;
+
+        const widget = document.querySelector('[data-widget-key="liveLink"]');
+        if (widget) return widget.textContent.trim();
+
+        return null;
+      };
+
+      let count = 0;
+      const interval = setInterval(() => {
+        const link = tryFind();
+        if (link) {
+          clearInterval(interval);
+          console.log(link);
+        } else if (++count > 60) {
+          clearInterval(interval);
+          console.warn("⚠️ Não encontrei link /go/live/ em 30s");
+        }
+      }, 500);
+    });
+
+    // Aguarda o console.log com o link
+    const timeout = 35000;
+    const waitForLink = new Promise((resolve) => {
+      const check = () => {
+        if (finalLink) resolve(finalLink);
+        else setTimeout(check, 1000);
+      };
+      check();
+    });
+
+    const link = await Promise.race([
+      waitForLink,
+      new Promise((_, reject) => setTimeout(() => reject("❌ Timeout ao esperar o link"), timeout))
+    ]);
+
+    await browser.close();
+    console.log("✅ Link encontrado:", link);
+    res.json({ sucesso: true, link });
+
+  } catch (erro) {
+    if (browser) await browser.close();
+    console.error("🚨 Erro na inscrição:", erro);
+    res.status(500).json({ erro: "Erro ao processar inscrição." });
   }
 });
-
-// Serve arquivos da pasta debug
-app.use("/debug", express.static("public/debug"));
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
