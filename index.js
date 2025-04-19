@@ -57,4 +57,14 @@ app.post("/", async (req, res) => {
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
+
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Resolve caminho absoluto da pasta atual
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Servir arquivos da raiz
+app.use(express.static(__dirname));
 });
