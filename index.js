@@ -48,97 +48,44 @@ app.get('/webinarjam', async (req, res) => {
     await page.setViewport({ width: 1366, height: 768 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
 
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1'
-    });
-
-    const csrfToken = "eyJpdiI6Im5TY2lSOWFrVDBIc05LcE1mRTB5N2c9PSIsInZhbHVlIjoid1VFU1o2RlQ3eDZKa3dMR21KbUpHdUtGdTdOdU1MeVBzLzdaK0dSWVhJOE9TZUR1N25WVGhtR0NoRnZyMVliaWFjaU9xWEsxcUNZY0VaeG1Icld6V3BhVmZua0VFaThCS0tUd2g4VEcyaklQSjFXd0ZibytWNWlvaDRvQTNyTG8iLCJtYWMiOiIxOTI2ZTAyMmMwMWRhY2EyZTViZTk0MGE4NDEyODI4MzllY2RkMDVhMmZjNGVlOTI5M2I3ODE4MTZkNzJjMjI0IiwidGFnIjoiIn0%3D";
-
-    await page.setCookie({
-      name: 'XSRF-TOKEN',
-      value: csrfToken,
-      domain: 'event.webinarjam.com',
-      path: '/',
-      httpOnly: false,
-      secure: true
-    });
-
     console.log('Acessando página de registro...');
     await page.goto('https://event.webinarjam.com/register/2/116pqiy', {
       waitUntil: 'networkidle2',
       timeout: 60000
     });
 
-    await sleep(3000);
+    await sleep(3000); // tempo pra estabilizar DOM
 
-    // Buscar botão REGISTRO
-    let registroFrame = null;
-    let registroButton = null;
+    // Detecta o frame embedado (único iframe com src válido)
+    const frames = page.frames();
+    const frame = frames.find(f => f.url().includes('event.webinarjam.com'));
 
-    for (const frame of page.frames()) {
-      const handle = await frame.evaluateHandle(() => {
-        return Array.from(document.querySelectorAll('button')).find(b =>
-          /registro/i.test(b.textContent)
-        );
-      });
+    if (!frame) throw new Error('❌ Frame do formulário não encontrado');
 
-      const isNull = await frame.evaluate(el => el == null, handle);
-      if (!isNull) {
-        registroFrame = frame;
-        registroButton = handle;
-        break;
-      }
-    }
-
-    if (!registroButton) throw new Error('❌ Botão REGISTRO não encontrado em nenhum frame');
-
-    console.log('✅ Botão REGISTRO encontrado — clicando...');
-    await registroButton.click();
-
-    // Espera inputs aparecerem
-    console.log('⏳ Aguardando inputs aparecerem no mesmo frame...');
-    const nameInput = await registroFrame.waitForSelector('input[name="name"]', { timeout: 20000 });
-    const emailInput = await registroFrame.waitForSelector('input[name="email"]', { timeout: 20000 });
-
-    // Aguarda visibilidade real dos campos
-    await registroFrame.waitForFunction(() => {
-      const nome = document.querySelector('input[name="name"]');
-      const email = document.querySelector('input[name="email"]');
-      return nome?.offsetParent !== null && email?.offsetParent !== null;
-    }, { timeout: 10000 });
+    console.log('⏳ Aguardando campos nome e email...');
+    const nameInput = await frame.waitForSelector('input[name="name"]', { timeout: 15000 });
+    const emailInput = await frame.waitForSelector('input[name="email"]', { timeout: 15000 });
 
     console.log('✍️ Preenchendo nome e e-mail...');
-    for (const char of nome) {
-      await registroFrame.type('input[name="name"]', char, { delay: 100 + Math.random() * 100 });
-    }
-
+    await nameInput.type(nome, { delay: 80 });
+    await sleep(500);
+    await emailInput.type(email, { delay: 70 });
     await sleep(500);
 
-    for (const char of email) {
-      await registroFrame.type('input[name="email"]', char, { delay: 80 + Math.random() * 100 });
-    }
-
-    await sleep(1000);
-
     console.log('🚀 Enviando formulário...');
-    const sendBtn = await registroFrame.$('button[type="submit"], button.js-submit, input[type="submit"]');
-    if (sendBtn) {
-      await sendBtn.click();
-    } else {
-      throw new Error('⚠️ Botão de enviar não encontrado');
-    }
+    const submitBtn = await frame.$('button[type="submit"], input[type="submit"], button.wj-submit');
+    if (!submitBtn) throw new Error('❌ Botão de envio não encontrado');
+
+    await submitBtn.click();
 
     try {
-      await registroFrame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
-      console.log('⌛ Redirecionamento falhou, mas continuando...');
+      console.warn('⌛ Timeout no redirecionamento — continuando...');
     }
 
     const currentUrl = page.url();
-    console.log(`URL atual: ${currentUrl}`);
+    console.log(`📍 URL atual: ${currentUrl}`);
 
     let liveLink = await page.evaluate(() => {
       let link = document.querySelector('#js-live_link_1');
@@ -157,9 +104,7 @@ app.get('/webinarjam', async (req, res) => {
       liveLink = currentUrl;
     }
 
-    if (!liveLink) {
-      throw new Error('Link não encontrado na página de agradecimento');
-    }
+    if (!liveLink) throw new Error('❌ Link não encontrado após envio');
 
     console.log(`✅ Link encontrado: ${liveLink}`);
 
@@ -186,10 +131,6 @@ app.get('/webinarjam', async (req, res) => {
 
     const used = process.memoryUsage().heapUsed / 1024 / 1024;
     console.log(`📦 Uso de memória: ${Math.round(used * 100) / 100} MB`);
-
-    if (used > 350) {
-      console.warn('⚠️ Uso de memória alto, considere reiniciar o processo');
-    }
   }
 });
 
