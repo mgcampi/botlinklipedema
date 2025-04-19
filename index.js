@@ -54,32 +54,27 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    await sleep(3000); // tempo pra estabilizar DOM
+    await sleep(3000);
 
-    // Detecta o frame embedado (único iframe com src válido)
-    const frames = page.frames();
-    const frame = frames.find(f => f.url().includes('event.webinarjam.com'));
-
-    if (!frame) throw new Error('❌ Frame do formulário não encontrado');
-
+    // 🧠 Espera os inputs usando placeholder
     console.log('⏳ Aguardando campos nome e email...');
-    const nameInput = await frame.waitForSelector('input[name="name"]', { timeout: 15000 });
-    const emailInput = await frame.waitForSelector('input[name="email"]', { timeout: 15000 });
+    await page.waitForSelector('input[placeholder*="primeiro nome"]', { timeout: 15000 });
+    await page.waitForSelector('input[placeholder*="e-mail"]', { timeout: 15000 });
 
     console.log('✍️ Preenchendo nome e e-mail...');
-    await nameInput.type(nome, { delay: 80 });
+    await page.type('input[placeholder*="primeiro nome"]', nome, { delay: 80 });
     await sleep(500);
-    await emailInput.type(email, { delay: 70 });
+    await page.type('input[placeholder*="e-mail"]', email, { delay: 70 });
     await sleep(500);
 
     console.log('🚀 Enviando formulário...');
-    const submitBtn = await frame.$('button[type="submit"], input[type="submit"], button.wj-submit');
+    const submitBtn = await page.$('button[type="submit"], input[type="submit"], button.wj-submit');
     if (!submitBtn) throw new Error('❌ Botão de envio não encontrado');
 
     await submitBtn.click();
 
     try {
-      await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
       console.warn('⌛ Timeout no redirecionamento — continuando...');
     }
