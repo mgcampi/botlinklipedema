@@ -75,9 +75,13 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    console.log('Aguardando carregamento da página...');
-    await page.waitForSelector('input[type="text"]', { timeout: 60000 });
-    await page.waitForSelector('input[type="email"]', { timeout: 60000 });
+   console.log('Clicando no botão Registro...');
+await page.waitForSelector('button.wj-button');
+await page.click('button.wj-button');
+
+console.log('Aguardando abertura do formulário...');
+await page.waitForSelector('input[type="text"]', { timeout: 60000 });
+await page.waitForSelector('input[type="email"]', { timeout: 60000 });
 
     await page.waitForTimeout(1000 + Math.random() * 1000);
     console.log('Preenchendo formulário...');
