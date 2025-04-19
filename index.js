@@ -1,6 +1,5 @@
 import express from "express";
 import axios from "axios";
-import * as cheerio from "cheerio";
 import fs from "fs";
 
 const app = express();
@@ -14,21 +13,18 @@ app.post("/", async (req, res) => {
     const htmlRes = await axios.get("https://event.webinarjam.com/register/2/116pqiy");
     const html = htmlRes.data;
 
-    // Salva o HTML da página pra debug se precisar
-    fs.writeFileSync("debug.html", html);
-    console.log("💾 HTML salvo como debug.html");
+    const timestamp = Date.now();
+    fs.writeFileSync(`debug-${timestamp}.html`, html);
+    console.log(`💾 HTML salvo como debug-${timestamp}.html`);
 
-    const $ = cheerio.load(html);
-    const configScript = $("script").filter((_, el) =>
-      $(el).html().includes("var config =")
-    ).first().html();
+    const configRegex = /var config = ({[\s\S]+?});/;
+    const match = html.match(configRegex);
 
-    if (!configScript) throw new Error("❌ Não achei o script com o config");
+    if (!match || !match[1]) {
+      throw new Error("❌ Não consegui extrair o config JSON");
+    }
 
-    const jsonMatch = configScript.match(/var config = ({[\s\S]+?});/);
-    if (!jsonMatch || !jsonMatch[1]) throw new Error("❌ Não consegui extrair o config JSON");
-
-    const config = JSON.parse(jsonMatch[1]);
+    const config = JSON.parse(match[1]);
 
     const schedule = config.webinar.registrationDates[0];
     const timezone = Object.values(config.webinar.timezones)[0];
