@@ -1,93 +1,92 @@
+// index.js
 import express from "express";
 import axios from "axios";
-import fs from "fs/promises";
-import path from "path";
-import { fileURLToPath } from "url";
+import fs from "fs";
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Middlewares
 app.use(express.json());
-app.use("/debug", express.static(path.join(__dirname, "debug")));
 
-app.get("/ping", (_, res) => res.send("pong"));
+const PORT = process.env.PORT || 8080;
+
+// Função para extrair JSON da variável 'config' via regex
+function extrairConfig(html) {
+  const regex = /var config = (\{.*?\});/s;
+  const match = html.match(regex);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(match[1]);
+    } catch (err) {
+      console.error("❌ Erro ao fazer parse do JSON:", err);
+      return null;
+    }
+  }
+  return null;
+}
 
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
-
-  if (!nome || !email) {
-    return res.status(400).json({ erro: "Nome e email são obrigatórios." });
-  }
-
-  const url = "https://event.webinarjam.com/register/116pqiy";
+  console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
   try {
-    console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
+    const response = await axios.get("https://event.webinarjam.com/register/116pqiy", {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
 
-    const response = await axios.get(url);
     const html = response.data;
-
-    // Salvar HTML para debug
     const timestamp = Date.now();
     const fileName = `debug-${timestamp}.html`;
-    const debugPath = path.join(__dirname, "debug", fileName);
-    await fs.writeFile(debugPath, html);
+    const filePath = `./public/debug/${fileName}`;
+
+    // Salva o HTML para debugging
+    fs.writeFileSync(filePath, html);
     console.log(`💾 HTML salvo como ${fileName}`);
 
-    // Regex flexível para extrair o config mesmo sem "var"
-    const configRegex = /config\s*=\s*({.*?});/s;
-    const match = html.match(configRegex);
+    const config = extrairConfig(html);
 
-    if (!match || !match[1]) {
-      throw new Error("❌ Não consegui extrair o config JSON");
+    if (!config) {
+      console.error("🚨 Erro na inscrição: ❌ Não consegui extrair o config JSON");
+      return res.status(500).json({
+        erro: "Erro ao processar inscrição.",
+        debug_url: `/debug/${fileName}`,
+      });
     }
 
-    const config = JSON.parse(match[1]);
-
-    const schedule = config.webinar.registrationDates[0];
-    const ts = schedule.ts;
-    const schedule_id = schedule.schedule_id;
+    const schedule_id = config.webinar.registrationDates[0].schedule_id;
+    const ts = config.webinar.registrationDates[0].ts;
 
     const payload = {
       name: nome,
       email: email,
-      ts,
       schedule_id,
-      event_id: 0,
-      register_submit: "Registro",
-      "captcha-verified": 1,
+      ts,
+      hash: config.hash,
+      timezone: config.webinar.configTimezone,
+      country: config.lead.country_code || "BR",
+      captcha: config.captcha.key,
     };
 
-    const headers = {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Referer: url,
-    };
+    const result = await axios.post(
+      config.routes.process,
+      new URLSearchParams(payload),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
 
-    const processUrl = config.routes.process;
-
-    const form = new URLSearchParams(payload).toString();
-
-    const resultado = await axios.post(processUrl, form, { headers });
-
-    const redirectUrl = resultado.data?.redirect;
-
-    if (!redirectUrl) {
-      throw new Error("❌ Resposta sem link de redirecionamento");
-    }
-
-    res.json({ sucesso: true, link: `https://event.webinarjam.com${redirectUrl}` });
+    console.log("✅ Inscrição feita com sucesso!");
+    return res.json({ status: "ok", inscrito_em: result.request.res.responseUrl });
   } catch (err) {
     console.error("🚨 Erro detalhado:", err.message);
-
-    const debugUrl = `/debug/${fileName || "erro.html"}`;
-    return res.status(500).json({
-      erro: "Erro ao processar inscrição.",
-      debug_url: debugUrl,
-    });
+    return res.status(500).json({ erro: "Erro ao processar inscrição." });
   }
 });
+
+// Serve arquivos da pasta debug
+app.use("/debug", express.static("public/debug"));
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
