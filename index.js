@@ -1,33 +1,65 @@
 import express from "express";
 import axios from "axios";
+import cheerio from "cheerio";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
+const PORT = process.env.PORT || 8080;
+
 app.use(express.json());
 
-app.post("/", async (req, res) => {
+// 📁 Caminho para servir arquivos estáticos (ex: debug-xxx.html)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use(express.static(__dirname));
+
+// 🚀 Rota principal de teste
+app.get("/", (_, res) => res.send("Bot do WebinarJam rodando!"));
+
+// 📩 Endpoint principal de inscrição
+app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
-  console.log("➡️ Iniciando inscrição para:", nome, email);
+  console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
   try {
-    const htmlRes = await axios.get("https://event.webinarjam.com/register/2/116pqiy");
-    const html = htmlRes.data;
+    const urlFormulario = "https://event.webinarjam.com/register/2/116pqiy";
+    const response = await axios.get(urlFormulario, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
 
-    const timestamp = Date.now();
-    fs.writeFileSync(`debug-${timestamp}.html`, html);
-    console.log(`💾 HTML salvo como debug-${timestamp}.html`);
+    const html = response.data;
 
-    const configRegex = /var config = ({[\s\S]+?});/;
-    const match = html.match(configRegex);
+    // 🔎 Salvar HTML para debug
+    const debugFile = `debug-${Date.now()}.html`;
+    fs.writeFileSync(debugFile, html);
+    console.log(`💾 HTML salvo como ${debugFile}`);
 
-    if (!match || !match[1]) {
-      throw new Error("❌ Não consegui extrair o config JSON");
+    const $ = cheerio.load(html);
+    const scripts = $("script");
+
+    let configJSON = null;
+
+    scripts.each((_, script) => {
+      const content = $(script).html();
+      if (content && content.includes("var config = {")) {
+        const match = content.match(/var config = ({[\s\S]+?});/);
+        if (match && match[1]) {
+          configJSON = JSON.parse(match[1]);
+        }
+      }
+    });
+
+    if (!configJSON) {
+      console.error("❌ Não consegui extrair o config JSON");
+      return res.status(500).json({ erro: "Erro ao processar inscrição." });
     }
 
-    const config = JSON.parse(match[1]);
-
-    const schedule = config.webinar.registrationDates[0];
-    const timezone = Object.values(config.webinar.timezones)[0];
+    const schedule = configJSON.webinar.registrationDates[0];
+    const timezone = configJSON.webinar.timezones["25"].id; // SP/RJ
 
     const payload = {
       schedule_id: schedule.schedule_id,
@@ -35,36 +67,27 @@ app.post("/", async (req, res) => {
       event_ts: schedule.ts,
       first_name: nome,
       email,
-      timezone: timezone.id
+      timezone,
     };
 
-    console.log("📦 Payload pronto:", payload);
+    const urlInscricao = configJSON.routes.process;
+    const resposta = await axios.post(urlInscricao, payload);
 
-    const resposta = await axios.post(config.routes.process, payload);
-    const urlFinal = resposta.data?.url;
+    const redirectUrl = resposta.data?.url;
 
-    if (!urlFinal) throw new Error("❌ Resposta não contém link final");
-
-    console.log("✅ Inscrição feita! Link:", urlFinal);
-    res.json({ sucesso: true, url: urlFinal });
-
-  } catch (err) {
-    console.error("🚨 Erro na inscrição:", err.message);
-    res.status(500).json({ erro: "Erro ao processar inscrição." });
+    if (redirectUrl) {
+      console.log("✅ Inscrição feita com sucesso!");
+      return res.json({ sucesso: true, link: redirectUrl });
+    } else {
+      console.warn("❌ Resposta sem link de redirecionamento");
+      return res.status(500).json({ erro: "Erro ao inscrever." });
+    }
+  } catch (erro) {
+    console.error("🚨 Erro na inscrição:", erro.message || erro);
+    return res.status(500).json({ erro: "Erro ao processar inscrição." });
   }
 });
 
-const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
-
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-// Resolve caminho absoluto da pasta atual
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Servir arquivos da raiz
-app.use(express.static(__dirname));
 });
