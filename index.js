@@ -4,6 +4,9 @@ const puppeteer = require('puppeteer');
 const app = express();
 const port = process.env.PORT || 8080;
 
+// Função de sleep (substitui page.waitForTimeout)
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -70,7 +73,7 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    await page.waitForTimeout(3000);
+    await sleep(3000);
 
     // 🔍 Encontra botão "REGISTRO" em qualquer frame
     let registroFrame = null;
@@ -98,11 +101,14 @@ app.get('/webinarjam', async (req, res) => {
     for (const char of nome) {
       await registroFrame.type('input[name="name"]', char, { delay: 100 + Math.random() * 100 });
     }
-    await page.waitForTimeout(500);
+
+    await sleep(500);
+
     for (const char of email) {
       await registroFrame.type('input[name="email"]', char, { delay: 80 + Math.random() * 100 });
     }
-    await page.waitForTimeout(1000);
+
+    await sleep(1000);
 
     console.log('🚀 Enviando formulário...');
     const sendBtn = await registroFrame.$('button[type="submit"], button.js-submit, input[type="submit"]');
