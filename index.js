@@ -54,47 +54,35 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    await sleep(2000); // deixa o JS começar a agir
+    console.log('⏳ Aguardando frame com name="wj-embed"...');
+    await sleep(3000); // tempo para JS inicial rodar
+    let frame = null;
 
-    console.log('⏳ Procurando frame com inputs...');
-    let targetFrame = null;
-    const maxAttempts = 30;
-
-    for (let i = 0; i < maxAttempts; i++) {
-      for (const frame of page.frames()) {
-        try {
-          const hasName = await frame.$('input[name="name"]');
-          const hasEmail = await frame.$('input[name="email"]');
-          if (hasName && hasEmail) {
-            targetFrame = frame;
-            break;
-          }
-        } catch (_) {}
-      }
-
-      if (targetFrame) break;
-
-      console.log(`⏳ Esperando formulário... tentativa ${i + 1}/30`);
-      await sleep(1000); // espera 1s e tenta de novo
+    for (let i = 0; i < 10; i++) {
+      frame = page.frames().find(f => f.name() === 'wj-embed');
+      if (frame) break;
+      await sleep(1000);
     }
 
-    if (!targetFrame) throw new Error('❌ Inputs não encontrados em nenhum frame após esperar 30s');
+    if (!frame) throw new Error('❌ Frame com name="wj-embed" não foi encontrado');
 
-    console.log('✅ Inputs encontrados, preenchendo...');
+    console.log('✅ Frame localizado, aguardando inputs...');
+    await frame.waitForSelector('input[name="name"]', { timeout: 15000 });
+    await frame.waitForSelector('input[name="email"]', { timeout: 15000 });
 
-    await targetFrame.type('input[name="name"]', nome, { delay: 80 });
+    console.log('✍️ Preenchendo nome e email...');
+    await frame.type('input[name="name"]', nome, { delay: 60 });
     await sleep(300);
-    await targetFrame.type('input[name="email"]', email, { delay: 70 });
+    await frame.type('input[name="email"]', email, { delay: 60 });
     await sleep(500);
 
-    console.log('🚀 Enviando formulário...');
-    const submitBtn = await targetFrame.$('button[type="submit"], input[type="submit"], button.wj-submit');
+    console.log('🚀 Submetendo formulário...');
+    const submitBtn = await frame.$('button[type="submit"]');
     if (!submitBtn) throw new Error('❌ Botão de envio não encontrado');
-
     await submitBtn.click();
 
     try {
-      await targetFrame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
       console.warn('⌛ Timeout no redirecionamento — continuando...');
     }
@@ -103,25 +91,17 @@ app.get('/webinarjam', async (req, res) => {
     console.log(`📍 URL atual: ${currentUrl}`);
 
     let liveLink = await page.evaluate(() => {
-      let link = document.querySelector('#js-live_link_1');
-      if (link) return link.href;
-
-      const links = Array.from(document.querySelectorAll('a[href*="go/live"]'));
-      if (links.length > 0) return links[0].href;
-
-      const allLinks = Array.from(document.querySelectorAll('a[href*="event.webinarjam.com/go/"]'));
-      if (allLinks.length > 0) return allLinks[0].href;
-
-      return null;
+      const links = Array.from(document.querySelectorAll('a[href*="go/live"], a[href*="/go/"]'));
+      return links.length ? links[0].href : null;
     });
 
-    if (!liveLink && (currentUrl.includes('/go/live/') || currentUrl.includes('/go/'))) {
+    if (!liveLink && currentUrl.includes('/go/')) {
       liveLink = currentUrl;
     }
 
-    if (!liveLink) throw new Error('❌ Link não encontrado após envio');
+    if (!liveLink) throw new Error('❌ Link não encontrado na página final');
 
-    console.log(`✅ Link encontrado: ${liveLink}`);
+    console.log(`✅ Link final: ${liveLink}`);
 
     return res.json({
       success: true,
