@@ -1,95 +1,65 @@
 const express = require('express');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const { CookieJar } = require('tough-cookie');
+const tough = require('tough-cookie');
 const { wrapper } = require('axios-cookiejar-support');
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-const REG_URL = 'https://event.webinarjam.com/register/2/116pqiy';
-const POST_URL = 'https://event.webinarjam.com/register/116pqiy/process';
-const THANK_YOU_URL = 'https://event.webinarjam.com/register/2/116pqiy/thank-you';
-
 app.get('/inscrever', async (req, res) => {
-  const nome = req.query.nome || 'Visitante';
-  const email = req.query.email;
+  const { nome, email } = req.query;
 
-  if (!email) {
-    return res.status(400).json({ success: false, error: 'Email obrigatório' });
+  if (!nome || !email) {
+    return res.status(400).json({ error: 'Informe nome e email' });
   }
 
-  const jar = new CookieJar();
-  const client = wrapper(axios.create({ jar }));
-
   try {
-    // 1. Acessa a página de inscrição
-    const page = await client.get(REG_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
+    const cookieJar = new tough.CookieJar();
+    const client = wrapper(axios.create({ jar: cookieJar, withCredentials: true }));
 
-    const match = page.data.match(/WJ_DATA = ({.*});/);
-    if (!match) throw new Error('WJ_DATA não encontrado');
-    const data = JSON.parse(match[1]);
+    // 1. Acessa página de registro (pega cookies)
+    await client.get('https://event.webinarjam.com/register/2/116pqiy');
 
-    const schedule = data.schedule[0];
-    const token = data.registration.token;
-
-    const cookies = await jar.getCookies(POST_URL);
-    const csrf = cookies.find(c => c.key === 'XSRF-TOKEN')?.value;
-    if (!csrf) throw new Error('Token CSRF não encontrado');
-
-    // 2. Faz o POST de inscrição
-    await client.post(POST_URL, {
-      schedule_id: schedule.id,
+    // 2. Envia inscrição
+    const payload = {
+      schedule_id: 7,
       event_id: 0,
-      event_ts: schedule.ts,
+      event_ts: 1745153100,
       first_name: nome,
       email: email,
       timezone: 26,
-      token: token
-    }, {
-      headers: {
-        'Content-Type': 'application/json;charset=UTF-8',
-        'x-csrf-token': decodeURIComponent(csrf),
-        'x-xsrf-token': decodeURIComponent(csrf),
-        'x-requested-with': 'XMLHttpRequest',
-        'origin': 'https://event.webinarjam.com',
-        'referer': REG_URL,
-        'User-Agent': 'Mozilla/5.0'
+      token: "0.tKty25SJY_isF4TZIrPSALTgJ9YcuVSFXMsxP1gh3zUYG7PT3hPOtPqx0_WA6995EIpyt29EvhwjdsM_3bcz3IP6edd7P9UN16fgL7ncvxKP366pIe8z1SaMCAivD6OJzSPddyH5freRgQZHPxv98Fy0gJvf_mDCxYKsd5ujiegyzTUYZJeetEcE_7M0WaqvlPflfvrjhrGkL0cGMClRBwMRU9EezM3yZHpCN6cBxybrEPPVKzi_gFtUp5ChHINxmTJUKiq7epRCPUssNcqZ9J1ioILFof47MmF5G-_cD9_OPIljibsZBfOlwBYYae7bpuredgP_QIr_sfCWmz3b6kX53TEeQjcIVfU6pCwV99vS1Hhzrp9g_dkUEZcDUnOfhmfA7mNTJ5QdbSOatuNt-f1OzAx6i6pZAenvVg1wDZwIhcEePW9NPxMZZoGNI_iUwxXOM4yKRKq4kLBLqioCdLcxDWxnX7XmyJOO15G6GExx6MXP3czbh35vgWKSfEMmORUEMesM8A3bjNaZQLlWTxb30dbSb32aaCO1T5T2yuMqiI1Udj90GlWmiq0h6qBXTmADuqgp0oMIfxiHFquzkTZxeA_rzXg-ZqdlNH8YgLafg61QbZ_IRWu20Y8LunlP5A-Fx1u6kY9vlpD3CzTR67Rhh0syWVFWSSodddKoxLkC6ft3blA4-9bitnkJBM7YwL-zGoZyANusTq7zpb4VfHsgphyK-Yf79j0XsmPutUkbbRB_uO1EIkG_WRDtKC48-zyzmEqrp11N8w2f4r8xTonHYho8WjrAugVtrX-GH34a_n8FZ2WYteqOENF96rTJS9CKltvwjcHrycjMgtrHh_uqJWZ6ksjCCZmzrvfTAolYQnpcLGto7kMTPv83-w5wT5XFZ1swnwKj7UC22tBppA.h4EtGTL1FexiVdTrKQl1jw.b8d1db473d4e7a08eab1daf0e6f92435adcf565ee15db15aaa82edb417c93475"
+    };
+
+    await client.post(
+      'https://event.webinarjam.com/register/116pqiy/process',
+      payload,
+      {
+        headers: {
+          'x-requested-with': 'XMLHttpRequest',
+          'Content-Type': 'application/json',
+        }
       }
-    });
+    );
 
-    // 3. Acessa a página de confirmação
-    const confirm = await client.get(THANK_YOU_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
+    // 3. Carrega novamente a página de confirmação
+    const confirmPage = await client.get('https://event.webinarjam.com/register/2/116pqiy');
+    const html = confirmPage.data;
 
-    const $ = cheerio.load(confirm.data);
-    const link = $('a[href*="/go/live/"]').attr('href');
+    // 4. Extrai o link da live
+    const match = html.match(/https:\/\/event\.webinarjam\.com\/go\/live\/[^\s"'<>]+/);
+    const link = match ? match[0] : null;
 
-    if (!link) throw new Error('❌ Link da live não encontrado na página de confirmação.');
+    if (!link) throw new Error("❌ Link da apresentação não encontrado");
 
-    return res.json({
-      success: true,
-      nome,
-      email,
-      link
-    });
+    return res.json({ success: true, link });
 
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    console.error(err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-// 🧪 Endpoint de teste
-app.get('/', (req, res) => {
-  res.send('🔥 API WebinarJam ativa!');
-});
-
 app.listen(port, () => {
-  console.log(`🚀 Servidor rodando na porta ${port}`);
+  console.log(`🚀 Rodando na porta ${port}`);
 });
