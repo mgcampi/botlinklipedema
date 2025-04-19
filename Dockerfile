@@ -1,11 +1,11 @@
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y \
-  chromium \
-  fonts-ipafont-gothic \
-  fonts-freefont-ttf \
-  --no-install-recommends && \
-  rm -rf /var/lib/apt/lists/*
+    chromium \
+    fonts-ipafont-gothic \
+    fonts-freefont-ttf \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -14,8 +14,4 @@ RUN npm install
 
 COPY . .
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-EXPOSE 8080
-
-CMD ["node", "index.js"]
+CMD ["npm", "start"]
