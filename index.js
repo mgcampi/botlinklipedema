@@ -1,109 +1,77 @@
 import express from "express";
-import puppeteer from "puppeteer";
+import axios from "axios";
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-
 app.use(express.json());
 
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
 
   if (!nome || !email) {
-    return res.status(400).json({ erro: "Nome e e-mail são obrigatórios." });
+    return res.status(400).json({ erro: "Nome e email são obrigatórios." });
   }
 
-  console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
-
-  let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process"
-      ],
+    console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
+
+    // Passo 1: Buscar HTML da página de inscrição
+    const htmlResponse = await axios.get("https://event.webinarjam.com/register/2/116pqiy");
+    const html = htmlResponse.data;
+
+    // Passo 2: Extrair string do var config
+    const match = html.match(/var\s+config\s*=\s*(\{.*?\});/s);
+    if (!match) {
+      console.error("❌ Não consegui extrair o config JSON");
+      return res.status(500).json({ erro: "Erro ao extrair dados da página." });
+    }
+
+    const configStr = match[1];
+    const config = JSON.parse(configStr);
+
+    // Passo 3: Enviar inscrição
+    const schedule = config.webinar.registrationDates?.[0];
+    const processUrl = config.routes?.process;
+    const captchaKey = config.captcha?.key;
+
+    if (!schedule || !processUrl || !captchaKey) {
+      return res.status(500).json({ erro: "Dados incompletos para inscrição." });
+    }
+
+    const payload = {
+      name: nome,
+      email: email,
+      schedule_id: schedule.schedule_id,
+      tz: "America/Sao_Paulo",
+      captcha: {
+        challenge: "manual",
+        key: captchaKey,
+        response: "manual",
+      },
+    };
+
+    const response = await axios.post(processUrl, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        Referer: "https://event.webinarjam.com/",
+      },
     });
 
-    const page = await browser.newPage();
-    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "networkidle2",
-      timeout: 60000
-    });
+    const linkFinal = response.data?.redirect?.url;
 
-    // Preenche o formulário
-    await page.type('input[name="name"]', nome);
-    await page.type('input[name="email"]', email);
-    await page.click('button[type="submit"]');
+    if (!linkFinal) {
+      console.error("❌ Inscrição falhou: Sem link de redirect");
+      return res.status(500).json({ erro: "Erro ao finalizar inscrição." });
+    }
 
-    // Aguarda o redirecionamento e coleta do link
-    let finalLink = null;
+    console.log("✅ Inscrição concluída:", linkFinal);
+    res.json({ sucesso: true, link: linkFinal });
 
-    page.on("console", (msg) => {
-      const text = msg.text();
-      if (text.includes("/go/live/")) {
-        finalLink = text.match(/https:\/\/[^ ]+/)?.[0];
-      }
-    });
-
-    // Executa o script dentro da página
-    await page.evaluate(() => {
-      const tryFind = () => {
-        const byId = document.querySelector('a[id^="js_live_link_"]');
-        if (byId && byId.href) return byId.href;
-
-        const byHref = [...document.querySelectorAll("a")].find(a => /\/go\/live\//i.test(a.href));
-        if (byHref) return byHref.href;
-
-        const widget = document.querySelector('[data-widget-key="liveLink"]');
-        if (widget) return widget.textContent.trim();
-
-        return null;
-      };
-
-      let count = 0;
-      const interval = setInterval(() => {
-        const link = tryFind();
-        if (link) {
-          clearInterval(interval);
-          console.log(link);
-        } else if (++count > 60) {
-          clearInterval(interval);
-          console.warn("⚠️ Não encontrei link /go/live/ em 30s");
-        }
-      }, 500);
-    });
-
-    // Aguarda o console.log com o link
-    const timeout = 35000;
-    const waitForLink = new Promise((resolve) => {
-      const check = () => {
-        if (finalLink) resolve(finalLink);
-        else setTimeout(check, 1000);
-      };
-      check();
-    });
-
-    const link = await Promise.race([
-      waitForLink,
-      new Promise((_, reject) => setTimeout(() => reject("❌ Timeout ao esperar o link"), timeout))
-    ]);
-
-    await browser.close();
-    console.log("✅ Link encontrado:", link);
-    res.json({ sucesso: true, link });
-
-  } catch (erro) {
-    if (browser) await browser.close();
-    console.error("🚨 Erro na inscrição:", erro);
+  } catch (err) {
+    console.error("🚨 Erro na inscrição:", err.message);
     res.status(500).json({ erro: "Erro ao processar inscrição." });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+app.listen(8080, () => {
+  console.log("🚀 Servidor rodando na porta 8080");
 });
