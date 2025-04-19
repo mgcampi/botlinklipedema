@@ -1,21 +1,16 @@
-// index.js - Automação WebinarJam (Versão Final)
 const express = require('express');
 const puppeteer = require('puppeteer');
 
-// 1. Inicialização do Express
 const app = express();
 const port = process.env.PORT || 8080;
 
-// 2. Middlewares essenciais
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. Health Check
 app.get('/health', (req, res) => {
   res.json({ status: 'online', timestamp: new Date() });
 });
 
-// 4. Endpoint principal
 app.get('/webinarjam', async (req, res) => {
   const { nome, email } = req.query;
 
@@ -75,100 +70,57 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-   console.log('Clicando no botão Registro...');
-await page.waitForSelector('button.wj-button');
-await page.click('button.wj-button');
+    await page.waitForTimeout(3000);
 
-console.log('Aguardando abertura do formulário...');
-await page.waitForSelector('input[type="text"]', { timeout: 60000 });
-await page.waitForSelector('input[type="email"]', { timeout: 60000 });
+    // 🔍 Encontra botão "REGISTRO" em qualquer frame
+    let registroFrame = null;
+    let registroButton = null;
 
-    await page.waitForTimeout(1000 + Math.random() * 1000);
-    console.log('Preenchendo formulário...');
+    for (const frame of page.frames()) {
+      const btnHandle = await frame.$x("//button[contains(translate(., 'REGISTRO', 'registro'), 'registro')]");
+      if (btnHandle.length > 0) {
+        registroFrame = frame;
+        registroButton = btnHandle[0];
+        break;
+      }
+    }
 
+    if (!registroButton) throw new Error('❌ Botão REGISTRO não encontrado em nenhum frame');
+
+    console.log('✅ Botão REGISTRO encontrado — clicando...');
+    await registroButton.click();
+
+    console.log('⏳ Aguardando formulário aparecer...');
+    await registroFrame.waitForSelector('input[name="name"]', { timeout: 15000 });
+    await registroFrame.waitForSelector('input[name="email"]', { timeout: 15000 });
+
+    console.log('✍️ Preenchendo nome e e-mail...');
     for (const char of nome) {
-      await page.type('input[type="text"]', char, { delay: 100 + Math.random() * 150 });
-      await page.waitForTimeout(50 + Math.random() * 100);
+      await registroFrame.type('input[name="name"]', char, { delay: 100 + Math.random() * 100 });
     }
-
-    await page.waitForTimeout(800 + Math.random() * 1200);
-
+    await page.waitForTimeout(500);
     for (const char of email) {
-      await page.type('input[type="email"]', char, { delay: 80 + Math.random() * 120 });
-      await page.waitForTimeout(30 + Math.random() * 80);
+      await registroFrame.type('input[name="email"]', char, { delay: 80 + Math.random() * 100 });
     }
+    await page.waitForTimeout(1000);
 
-    await page.waitForTimeout(1500 + Math.random() * 1000);
-
-    console.log('Tentando método 1: Submissão via JavaScript...');
-    const submitResult1 = await page.evaluate(() => {
-      const form = document.querySelector('form');
-      if (form) {
-        form.submit();
-        return true;
-      }
-      return false;
-    });
-
-    if (submitResult1) {
-      console.log('Formulário enviado via método 1');
+    console.log('🚀 Enviando formulário...');
+    const sendBtn = await registroFrame.$('button[type="submit"], button.js-submit, input[type="submit"]');
+    if (sendBtn) {
+      await sendBtn.click();
     } else {
-      console.log('Método 1 falhou, tentando método 2...');
-      await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const registerButton = buttons.find(button =>
-          button.textContent.includes('INSCREVA-SE') ||
-          button.textContent.includes('Registro')
-        );
-
-        if (registerButton) {
-          const rect = registerButton.getBoundingClientRect();
-          const x = rect.left + rect.width / 2;
-          const y = rect.top + rect.height / 2;
-
-          const mouseoverEvent = new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y });
-          const mousedownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y });
-          const mouseupEvent = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y });
-          const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y });
-
-          registerButton.dispatchEvent(mouseoverEvent);
-          registerButton.dispatchEvent(mousedownEvent);
-          registerButton.dispatchEvent(mouseupEvent);
-          registerButton.dispatchEvent(clickEvent);
-        }
-      });
-
-      console.log('Eventos de mouse disparados via método 2');
+      throw new Error('⚠️ Botão de enviar não encontrado');
     }
 
-    console.log('Aguardando redirecionamento...');
     try {
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      await registroFrame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
-      console.log('Timeout no redirecionamento, tentando método 3...');
-      await page.focus('input[type="email"]');
-      await page.keyboard.press('Enter');
-
-      try {
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
-      } catch (e) {
-        console.log('Método 3 falhou, tentando método 4...');
-        const buttonSelector = 'button:not([disabled])';
-        await page.waitForSelector(buttonSelector);
-        await page.click(buttonSelector);
-
-        try {
-          await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
-        } catch (e) {
-          throw new Error('Todos os métodos de submissão falharam');
-        }
-      }
+      console.log('⌛ Redirecionamento falhou, mas continuando...');
     }
 
     const currentUrl = page.url();
     console.log(`URL atual: ${currentUrl}`);
 
-    console.log('Procurando link...');
     let liveLink = await page.evaluate(() => {
       let link = document.querySelector('#js-live_link_1');
       if (link) return link.href;
@@ -190,7 +142,7 @@ await page.waitForSelector('input[type="email"]', { timeout: 60000 });
       throw new Error('Link não encontrado na página de agradecimento');
     }
 
-    console.log(`Link encontrado: ${liveLink}`);
+    console.log(`✅ Link encontrado: ${liveLink}`);
 
     return res.json({
       success: true,
@@ -210,19 +162,18 @@ await page.waitForSelector('input[type="email"]', { timeout: 60000 });
   } finally {
     if (browser) {
       await browser.close();
-      console.log('Navegador fechado');
+      console.log('🧹 Navegador fechado');
     }
 
     const used = process.memoryUsage().heapUsed / 1024 / 1024;
-    console.log(`Uso de memória: ${Math.round(used * 100) / 100} MB`);
+    console.log(`📦 Uso de memória: ${Math.round(used * 100) / 100} MB`);
 
     if (used > 350) {
-      console.warn('⚠️ Uso de memória alto, considerando reiniciar o processo');
+      console.warn('⚠️ Uso de memória alto, considere reiniciar o processo');
     }
   }
 });
 
-// 5. Inicialização do servidor
 app.listen(port, '0.0.0.0', () => {
   console.log(`✅ Servidor rodando na porta ${port}`);
 });
