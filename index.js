@@ -1,6 +1,6 @@
 import express from "express";
 import axios from "axios";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,17 +8,15 @@ import { fileURLToPath } from "url";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-app.use(express.json());
-
-// 📁 Caminho para servir arquivos estáticos (ex: debug-xxx.html)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use(express.static(__dirname));
 
-// 🚀 Rota principal de teste
+// 🗂️ Serve arquivos estáticos (para debug HTML)
+app.use(express.static(__dirname));
+app.use(express.json());
+
 app.get("/", (_, res) => res.send("Bot do WebinarJam rodando!"));
 
-// 📩 Endpoint principal de inscrição
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
   console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
@@ -26,14 +24,10 @@ app.post("/inscrever", async (req, res) => {
   try {
     const urlFormulario = "https://event.webinarjam.com/register/2/116pqiy";
     const response = await axios.get(urlFormulario, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
+      headers: { "User-Agent": "Mozilla/5.0" },
     });
 
     const html = response.data;
-
-    // 🔎 Salvar HTML para debug
     const debugFile = `debug-${Date.now()}.html`;
     fs.writeFileSync(debugFile, html);
     console.log(`💾 HTML salvo como ${debugFile}`);
@@ -59,7 +53,7 @@ app.post("/inscrever", async (req, res) => {
     }
 
     const schedule = configJSON.webinar.registrationDates[0];
-    const timezone = configJSON.webinar.timezones["25"].id; // SP/RJ
+    const timezone = configJSON.webinar.timezones["25"].id;
 
     const payload = {
       schedule_id: schedule.schedule_id,
