@@ -1,75 +1,82 @@
 import express from "express";
 import axios from "axios";
-import * as cheerio from "cheerio"; // 👈 AQUI CORRIGIDO
-import fs from "fs";
+import cheerio from "cheerio";
+import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
-import bodyParser from "body-parser";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-app.use(bodyParser.json());
+app.use(express.json());
+app.use("/debug", express.static("debug"));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use("/debug", express.static(path.join(__dirname, "debug")));
-
-app.post("/inscrever", async (req, res) => {
+app.post("/inscricao", async (req, res) => {
   const { nome, email } = req.body;
-  const refererUrl = "https://event.webinarjam.com/register/2/116pqiy";
-
-  console.log("➡️ Iniciando inscrição para:", nome, email);
+  console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
   try {
-    const response = await axios.get(refererUrl);
+    const url = "https://event.webinarjam.com/register/2/116pqiy/form-embed";
+    const response = await axios.get(url);
     const html = response.data;
 
+    // Salva HTML de debug
     const fileName = `debug-${Date.now()}.html`;
-    const filePath = path.join(__dirname, "debug", fileName);
-    fs.writeFileSync(filePath, html);
-    console.log("💾 HTML salvo como", fileName);
+    const filePath = path.join("debug", fileName);
+    await fs.writeFile(filePath, html);
+    console.log(`💾 HTML salvo como ${fileName}`);
 
-    const match = html.match(/var\s+config\s*=\s*(\{.*?\});\s*var\s+lang\s*=/s);
-    if (!match || match.length < 2) {
-      console.error("🚨 Erro na inscrição: ❌ Não consegui extrair o config JSON");
+    // Extrai o conteúdo do script com "var config = {...}"
+    const $ = cheerio.load(html);
+    const scriptTags = $("script");
+
+    let configRaw = null;
+
+    scriptTags.each((i, el) => {
+      const content = $(el).html();
+      if (content && content.includes("var config =")) {
+        const match = content.match(/var config = (.*?);\s*var lang =/s);
+        if (match && match[1]) {
+          configRaw = match[1];
+        }
+      }
+    });
+
+    if (!configRaw) {
+      console.error("❌ Não consegui extrair o config JSON");
       return res.status(500).json({
         erro: "Erro ao processar inscrição.",
         debug_url: `/debug/${fileName}`,
       });
     }
 
-    const config = JSON.parse(match[1]);
+    const config = JSON.parse(configRaw);
+    const schedule = config.webinar.registrationDates[0];
 
     const payload = {
       first_name: nome,
       email: email,
-      schedule: config.webinar.registrationDates[0].schedule_id,
-      timezone: 26,
-      country_code: "BR"
+      schedule_id: schedule.schedule_id,
+      event_id: schedule.event_id,
+      hash: config.hash,
+      country_code: config.lead.country_code,
     };
 
-    const result = await axios.post(config.routes.process, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        "Referer": refererUrl,
-      }
-    });
+    const headers = {
+      "Content-Type": "application/json",
+      Referer: url,
+    };
 
-    console.log("✅ Inscrição enviada com sucesso:", result.data);
+    const r = await axios.post(config.routes.process, payload, { headers });
 
     return res.json({
-      sucesso: true,
-      dados: result.data,
-      link_final: result.data.redirect_url || "Verifique seu e-mail para o link"
+      status: "ok",
+      message: "Inscrição realizada com sucesso!",
+      link: r.data?.redirect_url || null,
     });
-
-  } catch (erro) {
-    console.error("🚨 Erro detalhado:", erro.response?.data || erro.message);
+  } catch (e) {
+    console.error("🚨 Erro na inscrição:", e.message);
     return res.status(500).json({
       erro: "Erro ao processar inscrição.",
-      detalhes: erro.response?.data || erro.message,
       debug_url: `/debug/${fileName}`,
     });
   }
