@@ -1,14 +1,12 @@
-const express = require("express");
-const axios = require("axios");
-const puppeteer = require("puppeteer-extra");
-const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-const fs = require("fs");
-const path = require("path");
-
-puppeteer.use(StealthPlugin());
+import express from "express";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import axios from "axios";
 
 const app = express();
 app.use(express.json());
+
+puppeteer.use(StealthPlugin());
 
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
@@ -27,30 +25,30 @@ app.post("/inscrever", async (req, res) => {
 
     const page = await browser.newPage();
     await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "domcontentloaded",
+      waitUntil: "networkidle0", // espera todos os recursos carregarem
       timeout: 30000,
     });
 
-    // Espera o var config estar carregado
-    await page.waitForFunction(() => {
-      return window.config !== undefined;
-    }, { timeout: 15000 });
-
-    const config = await page.evaluate(() => config);
+    const html = await page.content();
     await browser.close();
 
-    // DEBUG opcional
-    const debugDir = path.join(__dirname, "public", "debug");
-    fs.mkdirSync(debugDir, { recursive: true });
-    const fileName = `debug-${Date.now()}.json`;
-    fs.writeFileSync(path.join(debugDir, fileName), JSON.stringify(config, null, 2));
+    // DEBUG opcional:
+    // console.log("🔎 Início do HTML:", html.slice(0, 300));
 
-    const schedule = config.webinar.registrationDates?.[0];
+    const start = html.indexOf("var config = ");
+    if (start === -1) throw new Error("❌ Não achei o var config");
+
+    const slice = html.slice(start + 13);
+    const end = slice.indexOf("};");
+    const jsonString = slice.slice(0, end + 1);
+    const config = JSON.parse(jsonString);
+
+    const schedule = config.webinar?.registrationDates?.[0];
     const processUrl = config.routes?.process;
     const captchaKey = config.captcha?.key;
 
     if (!schedule || !processUrl || !captchaKey) {
-      throw new Error("Dados incompletos para inscrição");
+      throw new Error("❌ Dados incompletos para inscrição");
     }
 
     const payload = {
@@ -74,17 +72,14 @@ app.post("/inscrever", async (req, res) => {
 
     const linkFinal = register.data?.redirect?.url;
 
-    if (!linkFinal) throw new Error("Inscrição falhou, sem link de redirect");
+    if (!linkFinal) throw new Error("❌ Inscrição falhou, sem link de redirect");
 
     console.log("✅ Inscrição concluída:", linkFinal);
     res.json({ sucesso: true, link: linkFinal });
 
   } catch (err) {
     console.error("🚨 Erro na inscrição:", err.message);
-    res.status(500).json({
-      erro: "Erro ao processar inscrição.",
-      detalhe: err.message,
-    });
+    res.status(500).json({ erro: "Erro ao processar inscrição.", detalhe: err.message });
   }
 });
 
