@@ -1,16 +1,16 @@
-// index.js
 import express from "express";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import bodyParser from "body-parser";
+import axios from "axios";
+
+const app = express();
+app.use(express.json());
 
 puppeteer.use(StealthPlugin());
 
-const app = express();
-app.use(bodyParser.json());
-
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
+
   if (!nome || !email) {
     return res.status(400).json({ erro: "Nome e email são obrigatórios." });
   }
@@ -19,38 +19,29 @@ app.post("/inscrever", async (req, res) => {
     console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
     const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
-
     const page = await browser.newPage();
-    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", { waitUntil: "networkidle0" });
 
-    await page.waitForTimeout(4000); // Tempo extra de espera
+    const html = await page.content();
+    await browser.close();
 
-    const configString = await page.evaluate(() => {
-      const scripts = Array.from(document.querySelectorAll("script"));
-      const configScript = scripts.find((s) =>
-        s.textContent.includes("var config = ")
-      );
-      if (!configScript) return null;
+    const start = html.indexOf("var config = ");
+    if (start === -1) throw new Error("❌ Não achei o var config");
 
-      const match = configScript.textContent.match(/var config = (\{[\s\S]*?\});/);
-      return match ? match[1] : null;
-    });
+    const substring = html.slice(start + 13);
+    const end = substring.indexOf("};");
+    const jsonString = substring.slice(0, end + 1);
+    const config = JSON.parse(jsonString);
 
-    if (!configString) throw new Error("❌ Não consegui extrair o config JSON");
-
-    const config = JSON.parse(configString);
     const schedule = config.webinar.registrationDates?.[0];
     const processUrl = config.routes?.process;
     const captchaKey = config.captcha?.key;
 
     if (!schedule || !processUrl || !captchaKey) {
-      throw new Error("❌ Dados incompletos para inscrição");
+      throw new Error("❌ Dados incompletos do config");
     }
 
     const payload = {
@@ -61,26 +52,19 @@ app.post("/inscrever", async (req, res) => {
       captcha: {
         challenge: "manual",
         key: captchaKey,
-        response: "manual",
-      },
+        response: "manual"
+      }
     };
 
-    const register = await page.evaluate(async (url, payload) => {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Referer: "https://event.webinarjam.com/",
-        },
-        body: JSON.stringify(payload),
-      });
-      return response.json();
-    }, processUrl, payload);
+    const resposta = await axios.post(processUrl, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        Referer: "https://event.webinarjam.com/"
+      }
+    });
 
-    await browser.close();
-
-    const linkFinal = register?.redirect?.url;
-    if (!linkFinal) throw new Error("❌ Inscrição falhou, sem link de redirect");
+    const linkFinal = resposta.data?.redirect?.url;
+    if (!linkFinal) throw new Error("❌ Não recebi link final da inscrição");
 
     console.log("✅ Inscrição concluída:", linkFinal);
     res.json({ sucesso: true, link: linkFinal });
