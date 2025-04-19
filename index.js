@@ -1,109 +1,74 @@
 import express from "express";
 import axios from "axios";
-import cheerio from "cheerio";
 import fs from "fs/promises";
-import path from "path";
-import { fileURLToPath } from "url";
 
 const app = express();
-const PORT = process.env.PORT || 8080;
 app.use(express.json());
 
-// __dirname para ESModules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const debugDir = path.join(__dirname, "debug");
-
-// Rota para inscrição
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
-  if (!nome || !email) {
-    return res.status(400).json({ erro: "Nome e email são obrigatórios" });
-  }
+  console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
   try {
-    console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
-
-    const url = "https://event.webinarjam.com/register/2/116pqiy";
-    const response = await axios.get(url);
-    const html = response.data;
-    const $ = cheerio.load(html);
+    const url = "https://event.webinarjam.com/register/2/116pqiy/form-embed";
+    const { data: html } = await axios.get(url);
 
     const timestamp = Date.now();
-    const htmlFileName = `debug-${timestamp}.html`;
-    const scriptsFileName = `scripts-${timestamp}.txt`;
+    const fileName = `debug-${timestamp}.html`;
+    const filePath = `./debug/${fileName}`;
+    await fs.writeFile(filePath, html);
+    console.log(`💾 HTML salvo como ${fileName}`);
 
-    await fs.mkdir(debugDir, { recursive: true });
-    await fs.writeFile(path.join(debugDir, htmlFileName), html, "utf-8");
-
-    const inlineScripts = $("script:not([src])")
-      .map((_, el) => $(el).html())
-      .get()
-      .join("\n\n=== SCRIPT ===\n\n");
-
-    await fs.writeFile(path.join(debugDir, scriptsFileName), inlineScripts, "utf-8");
-
-    console.log(`💾 HTML salvo como ${htmlFileName}`);
-    console.log(`📜 Scripts dump salvo como ${scriptsFileName}`);
-
-    // Tenta achar o trecho com "var config = {"
-    const configRegex = /var\s+config\s*=\s*(\{[\s\S]+?\});/;
-    const match = html.match(configRegex);
+    const match = html.match(/var config = ({[\s\S]+?});\s*var lang = /);
     if (!match) {
       console.error("🚨 Erro na inscrição: ❌ Não consegui extrair o config JSON");
       return res.status(500).json({
         erro: "Erro ao processar inscrição.",
-        debug_url: `/debug/${htmlFileName}`,
-        scripts_dump: `/debug/${scriptsFileName}`,
+        debug_url: `/debug/${fileName}`,
       });
     }
 
-    const config = eval("(" + match[1] + ")");
+    const config = JSON.parse(match[1]);
+    const { schedule_id } = config.webinar.registrationDates[0];
+    const captcha_key = config.captcha.key;
 
     const payload = {
       name: nome,
       email,
-      schedule_id: config.webinar.registrationDates[0].schedule_id,
-      event_id: config.webinar.registrationDates[0].event_id,
-      hash: config.hash,
-      ts: config.webinar.registrationDates[0].ts,
-      captcha: "",
-      country_code: "BR",
+      schedule_id,
       timezone: "America/Sao_Paulo",
+      country_code: "BR",
+      captcha_key,
+      register_without_timezone: 1,
     };
 
-    const postUrl = config.routes.process;
-    const headers = {
-      "Content-Type": "application/json",
-      Referer: url,
-    };
+    const resp = await axios.post(
+      `https://event.webinarjam.com/register/${config.webinarId}/${config.hash}/process`,
+      new URLSearchParams(payload).toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
 
-    const resposta = await axios.post(postUrl, payload, { headers });
-    const link = resposta.data?.data?.link;
-
-    if (link) {
-      console.log("✅ Inscrição feita com sucesso!");
-      return res.json({ sucesso: true, link });
-    } else {
-      console.error("🚨 Erro: resposta inesperada", resposta.data);
-      return res.status(500).json({
-        erro: "Erro ao processar inscrição.",
-        debug_url: `/debug/${htmlFileName}`,
-        scripts_dump: `/debug/${scriptsFileName}`,
-      });
+    const link = resp.data?.webinar_live_room;
+    if (!link) {
+      throw new Error("❌ Link da live não encontrado na resposta");
     }
+
+    console.log(`✅ Inscrição concluída. Link: ${link}`);
+    res.json({ sucesso: true, link });
   } catch (err) {
-    console.error("❌ Erro detalhado:", err.message);
-    return res.status(500).json({ erro: "Erro ao processar inscrição." });
+    console.error("🚨 Erro detalhado:", err.message);
+    res.status(500).json({
+      erro: "Erro ao processar inscrição.",
+    });
   }
 });
 
-// Servir arquivos da pasta debug
-app.use("/debug", express.static(path.join(__dirname, "debug")));
+app.use("/debug", express.static("debug"));
 
-// Teste de ping
-app.get("/ping", (_, res) => res.send("pong"));
-
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+app.listen(8080, () => {
+  console.log("🚀 Servidor rodando na porta 8080");
 });
