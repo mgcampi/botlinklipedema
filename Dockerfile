@@ -1,6 +1,5 @@
 FROM node:20-slim
 
-# Instala dependências do Chromium
 RUN apt-get update && apt-get install -y \
   chromium \
   fonts-ipafont-gothic \
@@ -8,18 +7,11 @@ RUN apt-get update && apt-get install -y \
   --no-install-recommends && \
   rm -rf /var/lib/apt/lists/*
 
-# Cria diretório de trabalho
 WORKDIR /app
-
-# Instala dependências
 COPY package*.json ./
 RUN npm install
-
-# Copia todos os arquivos
 COPY . .
 
-# Expõe a porta da API
-EXPOSE 8080
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Inicia o servidor
 CMD ["npm", "start"]
