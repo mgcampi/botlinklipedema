@@ -74,7 +74,7 @@ app.get('/webinarjam', async (req, res) => {
 
     await sleep(3000);
 
-    // 🔍 Buscar botão REGISTRO em todos os frames
+    // Buscar botão REGISTRO
     let registroFrame = null;
     let registroButton = null;
 
@@ -98,24 +98,17 @@ app.get('/webinarjam', async (req, res) => {
     console.log('✅ Botão REGISTRO encontrado — clicando...');
     await registroButton.click();
 
-    // 🧠 Espera novo iframe que contém o formulário
-    console.log('⏳ Aguardando iframe do formulário aparecer...');
-    await page.waitForFunction(() => {
-      return Array.from(document.querySelectorAll('iframe')).some(f =>
-        f.src.includes('/registration/form/')
-      );
-    }, { timeout: 20000 });
+    // Espera inputs aparecerem
+    console.log('⏳ Aguardando inputs aparecerem no mesmo frame...');
+    const nameInput = await registroFrame.waitForSelector('input[name="name"]', { timeout: 20000 });
+    const emailInput = await registroFrame.waitForSelector('input[name="email"]', { timeout: 20000 });
 
-    await sleep(2000); // tempo extra pra injeção do conteúdo
-
-    const frames = page.frames();
-    const formFrame = frames.find(f => f.url().includes('/registration/form/'));
-    if (!formFrame) throw new Error('❌ Frame do formulário não encontrado após abertura do modal');
-
-    registroFrame = formFrame;
-
-    await registroFrame.waitForSelector('input[name="name"]', { timeout: 15000 });
-    await registroFrame.waitForSelector('input[name="email"]', { timeout: 15000 });
+    // Aguarda visibilidade real dos campos
+    await registroFrame.waitForFunction(() => {
+      const nome = document.querySelector('input[name="name"]');
+      const email = document.querySelector('input[name="email"]');
+      return nome?.offsetParent !== null && email?.offsetParent !== null;
+    }, { timeout: 10000 });
 
     console.log('✍️ Preenchendo nome e e-mail...');
     for (const char of nome) {
