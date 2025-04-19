@@ -54,32 +54,34 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    await sleep(3000); // aguarda carregamento do iframe e scripts
+    await sleep(2000); // deixa o JS começar a agir
 
-    console.log('🔍 Procurando frame com o formulário...');
-    const frames = page.frames();
+    console.log('⏳ Procurando frame com inputs...');
     let targetFrame = null;
+    const maxAttempts = 30;
 
-    for (const frame of frames) {
-      try {
-        const input = await frame.$('input[name="name"]');
-        const email = await frame.$('input[name="email"]');
-        if (input && email) {
-          targetFrame = frame;
-          break;
-        }
-      } catch (_) {}
+    for (let i = 0; i < maxAttempts; i++) {
+      for (const frame of page.frames()) {
+        try {
+          const hasName = await frame.$('input[name="name"]');
+          const hasEmail = await frame.$('input[name="email"]');
+          if (hasName && hasEmail) {
+            targetFrame = frame;
+            break;
+          }
+        } catch (_) {}
+      }
+
+      if (targetFrame) break;
+
+      console.log(`⏳ Esperando formulário... tentativa ${i + 1}/30`);
+      await sleep(1000); // espera 1s e tenta de novo
     }
 
-    if (!targetFrame) throw new Error('❌ Nenhum frame com o formulário foi encontrado.');
+    if (!targetFrame) throw new Error('❌ Inputs não encontrados em nenhum frame após esperar 30s');
 
-    console.log('✅ Frame com formulário localizado');
+    console.log('✅ Inputs encontrados, preenchendo...');
 
-    // Aguarda os campos aparecerem
-    await targetFrame.waitForSelector('input[name="name"]', { timeout: 15000 });
-    await targetFrame.waitForSelector('input[name="email"]', { timeout: 15000 });
-
-    console.log('✍️ Preenchendo nome e e-mail...');
     await targetFrame.type('input[name="name"]', nome, { delay: 80 });
     await sleep(300);
     await targetFrame.type('input[name="email"]', email, { delay: 70 });
