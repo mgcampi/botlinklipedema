@@ -1,6 +1,12 @@
 import express from "express";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import axios from "axios";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 puppeteer.use(StealthPlugin());
 
@@ -14,44 +20,44 @@ app.post("/inscrever", async (req, res) => {
     return res.status(400).json({ erro: "Nome e email são obrigatórios." });
   }
 
-  try {
-    console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
+  console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
-    const browser = await puppeteer.launch({
+  let browser;
+  try {
+    browser = await puppeteer.launch({
       headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
-      executablePath: "/usr/bin/chromium",
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
     const page = await browser.newPage();
-    await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "networkidle0",
-    });
+    await page.goto("https://event.webinarjam.com/register/2/116pqiy", { waitUntil: "domcontentloaded" });
 
-    // aguarda um tempo pra garantir que o window.config exista
-    await page.waitForTimeout(2000);
+    // aguarda renderização completa
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    const config = await page.evaluate(() => {
-      return window.config || null;
-    });
+    const html = await page.content();
+    const timestamp = Date.now();
+    const fileName = `debug-${timestamp}.html`;
+    const debugPath = path.join(__dirname, "public", "debug", fileName);
+    await fs.writeFile(debugPath, html);
+    console.log(`💾 HTML salvo como ${fileName}`);
 
-    await browser.close();
+    const start = html.indexOf("var config = ");
+    if (start === -1) throw new Error("❌ Não achei o var config");
 
-    if (!config) {
-      throw new Error("❌ Não consegui extrair o config JSON");
-    }
+    const jsonStart = start + "var config = ".length;
+    const jsonEnd = html.indexOf("};", jsonStart);
+    const jsonString = html.slice(jsonStart, jsonEnd + 1);
+
+    const config = JSON.parse(jsonString);
 
     const schedule = config.webinar.registrationDates?.[0];
     const processUrl = config.routes?.process;
     const captchaKey = config.captcha?.key;
 
     if (!schedule || !processUrl || !captchaKey) {
-      throw new Error("❌ Dados incompletos para inscrição.");
+      throw new Error("❌ Dados incompletos no config");
     }
 
     const payload = {
@@ -62,32 +68,36 @@ app.post("/inscrever", async (req, res) => {
       captcha: {
         challenge: "manual",
         key: captchaKey,
-        response: "manual",
-      },
+        response: "manual"
+      }
     };
 
-    const response = await fetch(processUrl, {
-      method: "POST",
+    const response = await axios.post(processUrl, payload, {
       headers: {
         "Content-Type": "application/json",
-        Referer: "https://event.webinarjam.com/",
-      },
-      body: JSON.stringify(payload),
+        Referer: "https://event.webinarjam.com/"
+      }
     });
 
-    const data = await response.json();
-
-    const linkFinal = data?.redirect?.url;
-    if (!linkFinal) throw new Error("❌ Inscrição falhou, sem link de redirect");
+    const linkFinal = response.data?.redirect?.url;
+    if (!linkFinal) throw new Error("❌ Inscrição falhou");
 
     console.log("✅ Inscrição concluída:", linkFinal);
     res.json({ sucesso: true, link: linkFinal });
 
   } catch (err) {
     console.error("🚨 Erro na inscrição:", err.message);
-    res.status(500).json({ erro: "Erro ao processar inscrição." });
+    res.status(500).json({
+      erro: "Erro ao processar inscrição.",
+      detalhe: err.message,
+      debug_url: `/debug/${fileName}`
+    });
+  } finally {
+    if (browser) await browser.close();
   }
 });
+
+app.use("/debug", express.static(path.join(__dirname, "public", "debug")));
 
 app.listen(8080, () => {
   console.log("🚀 Servidor rodando na porta 8080");
