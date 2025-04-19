@@ -26,19 +26,26 @@ app.post("/inscrever", async (req, res) => {
     await fs.writeFile(filePath, html);
     console.log(`💾 HTML salvo como ${fileName}`);
 
-    const $ = cheerio.load(html);
-    const script = $('script').filter((_, el) => $(el).html().includes("var config =")).first();
-    const scriptContent = script.html();
+    const $ = cheerio.load(html, { scriptingEnabled: false });
 
-    if (!scriptContent) {
+    const scripts = $("script")
+      .map((i, el) => $(el).html())
+      .get();
+
+    const configScript = scripts.find(content => content && content.includes("var config ="));
+    if (!configScript) {
       console.error("❌ Não achei o script com o config");
+
+      const scriptDump = path.join(__dirname, "debug", `scripts-${timestamp}.txt`);
+      await fs.writeFile(scriptDump, scripts.join("\n\n=== SCRIPT ===\n\n"));
       return res.status(500).json({
         erro: "Erro ao processar inscrição.",
-        debug_url: `/debug/${fileName}`
+        debug_url: `/debug/${fileName}`,
+        scripts_dump: `/debug/scripts-${timestamp}.txt`
       });
     }
 
-    const match = scriptContent.match(/var config = ({[\s\S]*?});\s*var lang/);
+    const match = configScript.match(/var config = ({[\s\S]*?});\s*var lang/);
     if (!match || !match[1]) {
       console.error("❌ Não consegui extrair o config JSON");
       return res.status(500).json({
