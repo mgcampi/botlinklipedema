@@ -4,7 +4,6 @@ const puppeteer = require('puppeteer');
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Função de sleep (substitui page.waitForTimeout)
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 app.use(express.json());
@@ -75,15 +74,21 @@ app.get('/webinarjam', async (req, res) => {
 
     await sleep(3000);
 
-    // 🔍 Encontra botão "REGISTRO" em qualquer frame
+    // 🔍 Buscar botão REGISTRO em todos os frames
     let registroFrame = null;
     let registroButton = null;
 
     for (const frame of page.frames()) {
-      const btnHandle = await frame.$x("//button[contains(translate(., 'REGISTRO', 'registro'), 'registro')]");
-      if (btnHandle.length > 0) {
+      const handle = await frame.evaluateHandle(() => {
+        return Array.from(document.querySelectorAll('button')).find(b =>
+          /registro/i.test(b.textContent)
+        );
+      });
+
+      const isNull = await frame.evaluate(el => el == null, handle);
+      if (!isNull) {
         registroFrame = frame;
-        registroButton = btnHandle[0];
+        registroButton = handle;
         break;
       }
     }
