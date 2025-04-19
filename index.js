@@ -1,16 +1,16 @@
+// index.js
 import express from "express";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import axios from "axios";
-
-const app = express();
-app.use(express.json());
+import bodyParser from "body-parser";
 
 puppeteer.use(StealthPlugin());
 
+const app = express();
+app.use(bodyParser.json());
+
 app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
-
   if (!nome || !email) {
     return res.status(400).json({ erro: "Nome e email são obrigatórios." });
   }
@@ -25,25 +25,27 @@ app.post("/inscrever", async (req, res) => {
 
     const page = await browser.newPage();
     await page.goto("https://event.webinarjam.com/register/2/116pqiy", {
-      waitUntil: "networkidle0", // espera todos os recursos carregarem
+      waitUntil: "networkidle2",
       timeout: 30000,
     });
 
-    const html = await page.content();
-    await browser.close();
+    await page.waitForTimeout(4000); // Tempo extra de espera
 
-    // DEBUG opcional:
-    // console.log("🔎 Início do HTML:", html.slice(0, 300));
+    const configString = await page.evaluate(() => {
+      const scripts = Array.from(document.querySelectorAll("script"));
+      const configScript = scripts.find((s) =>
+        s.textContent.includes("var config = ")
+      );
+      if (!configScript) return null;
 
-    const start = html.indexOf("var config = ");
-    if (start === -1) throw new Error("❌ Não achei o var config");
+      const match = configScript.textContent.match(/var config = (\{[\s\S]*?\});/);
+      return match ? match[1] : null;
+    });
 
-    const slice = html.slice(start + 13);
-    const end = slice.indexOf("};");
-    const jsonString = slice.slice(0, end + 1);
-    const config = JSON.parse(jsonString);
+    if (!configString) throw new Error("❌ Não consegui extrair o config JSON");
 
-    const schedule = config.webinar?.registrationDates?.[0];
+    const config = JSON.parse(configString);
+    const schedule = config.webinar.registrationDates?.[0];
     const processUrl = config.routes?.process;
     const captchaKey = config.captcha?.key;
 
@@ -63,20 +65,25 @@ app.post("/inscrever", async (req, res) => {
       },
     };
 
-    const register = await axios.post(processUrl, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        Referer: "https://event.webinarjam.com/",
-      },
-    });
+    const register = await page.evaluate(async (url, payload) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Referer: "https://event.webinarjam.com/",
+        },
+        body: JSON.stringify(payload),
+      });
+      return response.json();
+    }, processUrl, payload);
 
-    const linkFinal = register.data?.redirect?.url;
+    await browser.close();
 
+    const linkFinal = register?.redirect?.url;
     if (!linkFinal) throw new Error("❌ Inscrição falhou, sem link de redirect");
 
     console.log("✅ Inscrição concluída:", linkFinal);
     res.json({ sucesso: true, link: linkFinal });
-
   } catch (err) {
     console.error("🚨 Erro na inscrição:", err.message);
     res.status(500).json({ erro: "Erro ao processar inscrição.", detalhe: err.message });
