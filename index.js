@@ -54,29 +54,36 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    console.log('⏳ Aguardando frame com name="wj-embed"...');
-    await sleep(3000); // tempo para JS inicial rodar
+    console.log('⏳ Procurando frame com inputs...');
     let frame = null;
+    const maxTries = 20;
 
-    for (let i = 0; i < 10; i++) {
-      frame = page.frames().find(f => f.name() === 'wj-embed');
+    for (let i = 0; i < maxTries; i++) {
+      for (const f of page.frames()) {
+        try {
+          const nameInput = await f.$('input[name="name"]');
+          const emailInput = await f.$('input[name="email"]');
+          if (nameInput && emailInput) {
+            frame = f;
+            break;
+          }
+        } catch (_) {}
+      }
+
       if (frame) break;
+      console.log(`⏳ Tentativa ${i + 1}/${maxTries}... ainda não apareceu`);
       await sleep(1000);
     }
 
-    if (!frame) throw new Error('❌ Frame com name="wj-embed" não foi encontrado');
+    if (!frame) throw new Error('❌ Nenhum frame com inputs encontrados após 20 segundos');
 
-    console.log('✅ Frame localizado, aguardando inputs...');
-    await frame.waitForSelector('input[name="name"]', { timeout: 15000 });
-    await frame.waitForSelector('input[name="email"]', { timeout: 15000 });
-
-    console.log('✍️ Preenchendo nome e email...');
+    console.log('✅ Inputs encontrados! Preenchendo...');
     await frame.type('input[name="name"]', nome, { delay: 60 });
     await sleep(300);
     await frame.type('input[name="email"]', email, { delay: 60 });
     await sleep(500);
 
-    console.log('🚀 Submetendo formulário...');
+    console.log('🚀 Clicando em registrar...');
     const submitBtn = await frame.$('button[type="submit"]');
     if (!submitBtn) throw new Error('❌ Botão de envio não encontrado');
     await submitBtn.click();
@@ -84,7 +91,7 @@ app.get('/webinarjam', async (req, res) => {
     try {
       await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
-      console.warn('⌛ Timeout no redirecionamento — continuando...');
+      console.warn('⌛ Timeout no redirecionamento — seguindo assim mesmo...');
     }
 
     const currentUrl = page.url();
@@ -99,7 +106,7 @@ app.get('/webinarjam', async (req, res) => {
       liveLink = currentUrl;
     }
 
-    if (!liveLink) throw new Error('❌ Link não encontrado na página final');
+    if (!liveLink) throw new Error('❌ Link não encontrado após envio');
 
     console.log(`✅ Link final: ${liveLink}`);
 
