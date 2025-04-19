@@ -11,8 +11,14 @@ const PORT = process.env.PORT || 8080;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 🗂️ Serve arquivos estáticos (para debug HTML)
-app.use(express.static(__dirname));
+// ✅ Cria a pasta de debug se não existir
+const debugDir = path.join(__dirname, "debugs");
+if (!fs.existsSync(debugDir)) {
+  fs.mkdirSync(debugDir);
+}
+
+// ✅ Serve arquivos estáticos da pasta /debugs
+app.use("/debug", express.static(debugDir));
 app.use(express.json());
 
 app.get("/", (_, res) => res.send("Bot do WebinarJam rodando!"));
@@ -28,9 +34,10 @@ app.post("/inscrever", async (req, res) => {
     });
 
     const html = response.data;
-    const debugFile = `debug-${Date.now()}.html`;
-    fs.writeFileSync(debugFile, html);
-    console.log(`💾 HTML salvo como ${debugFile}`);
+    const debugFilename = `debug-${Date.now()}.html`;
+    const debugPath = path.join(debugDir, debugFilename);
+    fs.writeFileSync(debugPath, html);
+    console.log(`💾 HTML salvo como ${debugFilename}`);
 
     const $ = cheerio.load(html);
     const scripts = $("script");
@@ -49,7 +56,10 @@ app.post("/inscrever", async (req, res) => {
 
     if (!configJSON) {
       console.error("❌ Não consegui extrair o config JSON");
-      return res.status(500).json({ erro: "Erro ao processar inscrição." });
+      return res.status(500).json({
+        erro: "Erro ao processar inscrição.",
+        debug_url: `/debug/${debugFilename}`
+      });
     }
 
     const schedule = configJSON.webinar.registrationDates[0];
