@@ -54,9 +54,8 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    await sleep(3000); // tempo para o iframe carregar via JS
+    await sleep(3000); // aguarda carregamento do iframe e scripts
 
-    // Buscar frame certo pelo conteúdo (procurar input dentro)
     console.log('🔍 Procurando frame com o formulário...');
     const frames = page.frames();
     let targetFrame = null;
@@ -64,17 +63,19 @@ app.get('/webinarjam', async (req, res) => {
     for (const frame of frames) {
       try {
         const input = await frame.$('input[name="name"]');
-        if (input) {
+        const email = await frame.$('input[name="email"]');
+        if (input && email) {
           targetFrame = frame;
           break;
         }
       } catch (_) {}
     }
 
-    if (!targetFrame) throw new Error('❌ Nenhum frame com formulário encontrado');
+    if (!targetFrame) throw new Error('❌ Nenhum frame com o formulário foi encontrado.');
 
-    console.log('✅ Frame com formulário localizado!');
+    console.log('✅ Frame com formulário localizado');
 
+    // Aguarda os campos aparecerem
     await targetFrame.waitForSelector('input[name="name"]', { timeout: 15000 });
     await targetFrame.waitForSelector('input[name="email"]', { timeout: 15000 });
 
