@@ -14,11 +14,21 @@ app.post("/inscrever", async (req, res) => {
   try {
     console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
-    // 1. Baixa o HTML
-    const response = await axios.get("https://event.webinarjam.com/register/2/116pqiy");
+    // 1. Baixa o HTML com headers de navegador
+    const response = await axios.get("https://event.webinarjam.com/register/2/116pqiy", {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+      },
+    });
+
     const html = response.data;
 
-    // 2. Tenta extrair o conteúdo do var config manualmente
+    // 2. DEBUG: loga parte do HTML pra confirmar que veio certo
+    console.log("🔎 Início do HTML:", html.slice(0, 500));
+
+    // 3. Tenta extrair manualmente o JSON do var config
     const start = html.indexOf("var config = ");
     if (start === -1) throw new Error("Não achei o var config");
 
@@ -28,7 +38,7 @@ app.post("/inscrever", async (req, res) => {
 
     const config = JSON.parse(jsonString);
 
-    // 3. Monta payload de inscrição
+    // 4. Monta payload
     const schedule = config.webinar.registrationDates?.[0];
     const processUrl = config.routes?.process;
     const captchaKey = config.captcha?.key;
@@ -49,7 +59,7 @@ app.post("/inscrever", async (req, res) => {
       },
     };
 
-    // 4. Faz a inscrição
+    // 5. Envia a inscrição
     const register = await axios.post(processUrl, payload, {
       headers: {
         "Content-Type": "application/json",
@@ -58,7 +68,6 @@ app.post("/inscrever", async (req, res) => {
     });
 
     const linkFinal = register.data?.redirect?.url;
-
     if (!linkFinal) throw new Error("Inscrição falhou, sem link de redirect");
 
     console.log("✅ Inscrição concluída:", linkFinal);
