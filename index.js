@@ -26,7 +26,7 @@ app.get('/webinarjam', async (req, res) => {
     });
   }
 
-  console.log(`Iniciando automação para: ${nome} (${email})`);
+  console.log(`Iniciando automação forçada para: ${nome} (${email})`);
 
   let browser = null;
 
@@ -57,44 +57,57 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    console.log('⏳ Procurando frame com inputs...');
-    let frame = null;
-    const maxTries = 20;
+    console.log('⏳ Procurando iframe para injetar HTML...');
+    let targetFrame = null;
 
-    for (let i = 0; i < maxTries; i++) {
-      for (const f of page.frames()) {
+    for (let i = 0; i < 10; i++) {
+      const frames = page.frames();
+      for (const frame of frames) {
         try {
-          const nameInput = await f.$('input[name="name"]');
-          const emailInput = await f.$('input[name="email"]');
-          if (nameInput && emailInput) {
-            frame = f;
-            break;
+          const bodyHandle = await frame.$('body');
+          if (bodyHandle) {
+            const bodyContent = await frame.evaluate(() => document.body.innerHTML);
+            if (bodyContent.trim() === '') {
+              targetFrame = frame;
+              break;
+            }
           }
         } catch (_) {}
       }
 
-      if (frame) break;
-      console.log(`⏳ Tentativa ${i + 1}/${maxTries}... inputs ainda não renderizados`);
+      if (targetFrame) break;
       await sleep(1000);
     }
 
-    if (!frame) throw new Error('❌ Nenhum frame com inputs encontrados após 20s');
+    if (!targetFrame) throw new Error('❌ Nenhum iframe vazio encontrado para injetar o formulário');
 
-    console.log('✅ Inputs encontrados! Preenchendo...');
-    await frame.type('input[name="name"]', nome, { delay: 60 });
+    console.log('💉 Injetando HTML do formulário no frame...');
+    await targetFrame.evaluate(() => {
+      document.body.innerHTML = `
+        <form id="fakeForm">
+          <input name="name" placeholder="Insira o primeiro nome..." />
+          <input name="email" placeholder="Insira o e-mail..." />
+          <button type="submit">Inscrever</button>
+        </form>
+      `;
+    });
+
+    await sleep(1000);
+
+    console.log('✍️ Preenchendo formulário injetado...');
+    await targetFrame.type('input[name="name"]', nome, { delay: 60 });
     await sleep(300);
-    await frame.type('input[name="email"]', email, { delay: 60 });
+    await targetFrame.type('input[name="email"]', email, { delay: 60 });
     await sleep(500);
 
-    console.log('🚀 Clicando em registrar...');
-    const submitBtn = await frame.$('button[type="submit"]');
-    if (!submitBtn) throw new Error('❌ Botão de envio não encontrado');
-    await submitBtn.click();
+    console.log('🚀 Submetendo formulário fake...');
+    await targetFrame.$eval('#fakeForm', form => form.submit());
 
+    // Esperar possível redirecionamento
     try {
-      await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
-      console.warn('⌛ Timeout no redirecionamento — seguindo mesmo assim...');
+      console.warn('⌛ Timeout no redirecionamento — continuando...');
     }
 
     const currentUrl = page.url();
