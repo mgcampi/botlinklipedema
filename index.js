@@ -1,25 +1,29 @@
-// index.js
 import express from "express";
-import { inscreverNoWebinarJam } from "./inscricaoWebinar.js";
+import { inscreverUsuario } from "./inscricaoWebinar.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-app.get("/", (req, res) => {
-  res.send("🚀 API do WebinarJam está online!");
-});
+app.use(express.json());
 
-app.get("/inscrever", async (req, res) => {
-  const { nome, email } = req.query;
+app.post("/webinar", async (req, res) => {
+  const { nome, email } = req.body;
 
   if (!nome || !email) {
-    return res.status(400).json({ success: false, error: "Nome e email são obrigatórios." });
+    return res.status(400).json({ erro: "Nome e e-mail são obrigatórios." });
   }
 
-  const resultado = await inscreverNoWebinarJam(nome, email);
-  res.json(resultado);
+  try {
+    const link = await inscreverUsuario(nome, email);
+    res.json({ sucesso: true, link });
+  } catch (erro) {
+    console.error("Erro na inscrição:", erro.message);
+    res.status(500).json({ erro: "Erro ao processar inscrição." });
+  }
 });
 
+app.get("/", (_, res) => res.send("✅ Bot do WebinarJam rodando!"));
+
 app.listen(PORT, () => {
-  console.log(`🔥 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
