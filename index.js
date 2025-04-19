@@ -54,35 +54,44 @@ app.get('/webinarjam', async (req, res) => {
       timeout: 60000
     });
 
-    await sleep(3000);
+    await sleep(3000); // tempo para o iframe carregar via JS
 
-    // 🧠 Captura do frame que tem o formulário (único que muda de src dinamicamente)
+    // Buscar frame certo pelo conteúdo (procurar input dentro)
+    console.log('🔍 Procurando frame com o formulário...');
     const frames = page.frames();
-    const frame = frames.find(f =>
-      f.url().includes('webinarjam.com') &&
-      f.url().includes('/register/') === false // evita a própria página
-    );
+    let targetFrame = null;
 
-    if (!frame) throw new Error('❌ Frame com formulário não encontrado');
+    for (const frame of frames) {
+      try {
+        const input = await frame.$('input[name="name"]');
+        if (input) {
+          targetFrame = frame;
+          break;
+        }
+      } catch (_) {}
+    }
 
-    console.log('⏳ Aguardando campos no frame...');
-    await frame.waitForSelector('input[name="name"]', { timeout: 15000 });
-    await frame.waitForSelector('input[name="email"]', { timeout: 15000 });
+    if (!targetFrame) throw new Error('❌ Nenhum frame com formulário encontrado');
+
+    console.log('✅ Frame com formulário localizado!');
+
+    await targetFrame.waitForSelector('input[name="name"]', { timeout: 15000 });
+    await targetFrame.waitForSelector('input[name="email"]', { timeout: 15000 });
 
     console.log('✍️ Preenchendo nome e e-mail...');
-    await frame.type('input[name="name"]', nome, { delay: 80 });
+    await targetFrame.type('input[name="name"]', nome, { delay: 80 });
     await sleep(300);
-    await frame.type('input[name="email"]', email, { delay: 70 });
+    await targetFrame.type('input[name="email"]', email, { delay: 70 });
     await sleep(500);
 
     console.log('🚀 Enviando formulário...');
-    const submitBtn = await frame.$('button[type="submit"], input[type="submit"], button.wj-submit');
+    const submitBtn = await targetFrame.$('button[type="submit"], input[type="submit"], button.wj-submit');
     if (!submitBtn) throw new Error('❌ Botão de envio não encontrado');
 
     await submitBtn.click();
 
     try {
-      await frame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+      await targetFrame.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
     } catch (e) {
       console.warn('⌛ Timeout no redirecionamento — continuando...');
     }
