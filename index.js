@@ -98,7 +98,22 @@ app.get('/webinarjam', async (req, res) => {
     console.log('✅ Botão REGISTRO encontrado — clicando...');
     await registroButton.click();
 
-    console.log('⏳ Aguardando formulário aparecer...');
+    // 🧠 Espera novo iframe que contém o formulário
+    console.log('⏳ Aguardando iframe do formulário aparecer...');
+    await page.waitForFunction(() => {
+      return Array.from(document.querySelectorAll('iframe')).some(f =>
+        f.src.includes('/registration/form/')
+      );
+    }, { timeout: 20000 });
+
+    await sleep(2000); // tempo extra pra injeção do conteúdo
+
+    const frames = page.frames();
+    const formFrame = frames.find(f => f.url().includes('/registration/form/'));
+    if (!formFrame) throw new Error('❌ Frame do formulário não encontrado após abertura do modal');
+
+    registroFrame = formFrame;
+
     await registroFrame.waitForSelector('input[name="name"]', { timeout: 15000 });
     await registroFrame.waitForSelector('input[name="email"]', { timeout: 15000 });
 
