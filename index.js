@@ -3,81 +3,86 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import fs from "fs/promises";
 import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(express.json());
-app.use("/debug", express.static("debug"));
+app.use("/debug", express.static(path.join(__dirname, "debug")));
 
-app.post("/inscricao", async (req, res) => {
+app.post("/inscrever", async (req, res) => {
   const { nome, email } = req.body;
   console.log(`➡️ Iniciando inscrição para: ${nome} ${email}`);
 
   try {
-    const url = "https://event.webinarjam.com/register/2/116pqiy/form-embed";
-    const response = await axios.get(url);
+    const response = await axios.get("https://event.webinarjam.com/register/2/116pqiy");
     const html = response.data;
 
-    // Salva HTML de debug
-    const fileName = `debug-${Date.now()}.html`;
-    const filePath = path.join("debug", fileName);
+    const timestamp = Date.now();
+    const fileName = `debug-${timestamp}.html`;
+    const filePath = path.join(__dirname, "debug", fileName);
     await fs.writeFile(filePath, html);
     console.log(`💾 HTML salvo como ${fileName}`);
 
-    // Extrai o conteúdo do script com "var config = {...}"
     const $ = cheerio.load(html);
-    const scriptTags = $("script");
+    const script = $('script').filter((_, el) => $(el).html().includes("var config =")).first();
+    const scriptContent = script.html();
 
-    let configRaw = null;
-
-    scriptTags.each((i, el) => {
-      const content = $(el).html();
-      if (content && content.includes("var config =")) {
-        const match = content.match(/var config = (.*?);\s*var lang =/s);
-        if (match && match[1]) {
-          configRaw = match[1];
-        }
-      }
-    });
-
-    if (!configRaw) {
-      console.error("❌ Não consegui extrair o config JSON");
+    if (!scriptContent) {
+      console.error("❌ Não achei o script com o config");
       return res.status(500).json({
         erro: "Erro ao processar inscrição.",
-        debug_url: `/debug/${fileName}`,
+        debug_url: `/debug/${fileName}`
       });
     }
 
-    const config = JSON.parse(configRaw);
-    const schedule = config.webinar.registrationDates[0];
+    const match = scriptContent.match(/var config = ({[\s\S]*?});\s*var lang/);
+    if (!match || !match[1]) {
+      console.error("❌ Não consegui extrair o config JSON");
+      return res.status(500).json({
+        erro: "Erro ao processar inscrição.",
+        debug_url: `/debug/${fileName}`
+      });
+    }
+
+    const config = JSON.parse(match[1]);
+    const processUrl = config.routes.process;
+    const scheduleId = config.webinar.registrationDates[0].schedule_id;
+    const captchaKey = config.captcha.key;
 
     const payload = {
-      first_name: nome,
+      name: nome,
       email: email,
-      schedule_id: schedule.schedule_id,
-      event_id: schedule.event_id,
-      hash: config.hash,
-      country_code: config.lead.country_code,
+      schedule: scheduleId,
+      ts: Date.now().toString(),
+      captcha: "",
+      captcha_key: captchaKey
     };
 
     const headers = {
-      "Content-Type": "application/json",
-      Referer: url,
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
     };
 
-    const r = await axios.post(config.routes.process, payload, { headers });
+    const formData = new URLSearchParams(payload).toString();
+    const submit = await axios.post(processUrl, formData, { headers });
+
+    const data = submit.data;
+    if (data.status !== "ok") {
+      throw new Error("Erro na resposta da inscrição.");
+    }
 
     return res.json({
       status: "ok",
-      message: "Inscrição realizada com sucesso!",
-      link: r.data?.redirect_url || null,
+      link: data.redirect_url || "Link não fornecido"
     });
-  } catch (e) {
-    console.error("🚨 Erro na inscrição:", e.message);
+
+  } catch (error) {
+    console.error("🚨 Erro detalhado:", error.message);
     return res.status(500).json({
       erro: "Erro ao processar inscrição.",
-      debug_url: `/debug/${fileName}`,
+      debug_url: `/debug/${Date.now()}.html`
     });
   }
 });
